@@ -1,0 +1,15 @@
+name: bernstein-ibf-nn
+channels:
+  - numba
+  - pytorch
+  - nvidia
+dependencies:
+  - pytorch
+  - torchvision
+  - pytorch-cuda=11.7
+  - numpy
+  - h5py
+  - numba
+  - pip
+  - pip:
+    - matplotlib
