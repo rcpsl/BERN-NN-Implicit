@@ -15,7 +15,7 @@ using packed_accessor_t = torch::PackedTensorAccessor64<scalar_t, dim, torch::Re
 /**
  * This performs a reduction of data in a single GPU warp.
  * `op` can be any binary operation. 
- * The result of the reduction is stored in block[local_tid]
+ * The result of the reduction is stored in block[0]
  */
 #define WARP_REDUCE(name,op)                                                          \
 template<typename scalar_t, int block_size>                                           \
@@ -53,8 +53,8 @@ void ibf_minmax_cuda_kernel(
 	const int nvars,
 	const int max_degree,
 	const int ebf_size) {
-  size_t local_tid = threadIdx.x;
-  size_t global_tid = blockIdx.x * blockDim.x + threadIdx.x;
+  const size_t local_tid = threadIdx.x;
+  const size_t global_tid = blockIdx.x * blockDim.x + threadIdx.x;
   
   __shared__ scalar_t block_outer[BLOCK_SIZE];
   __shared__ scalar_t block_min[BLOCK_SIZE];
@@ -68,7 +68,7 @@ void ibf_minmax_cuda_kernel(
     for (int term = 0; term < nterms; ++term) {
       // each global_tid must correspond to a unique sequence of powers in
       // each variable. To do this, we follow the same iteration as converting
-      // an base 10 integer t to an integer of base `max_degree`.
+      // a base 10 integer t to an integer of base `max_degree`.
       // t % d is least significant digit in base d.
       // t / d truncates the last digit in base d.
       //
@@ -77,9 +77,8 @@ void ibf_minmax_cuda_kernel(
       scalar_t local_result = 1;
       int t = global_tid;
       for (int var = 0; var < nvars; ++var) {
-        int pow_idx = t % max_degree;
+        local_result *= poly[term][var][t % max_degree];
         t /= max_degree;
-        local_result *= poly[term][var][pow_idx];
       }
       block_outer[local_tid] += local_result;
     }
