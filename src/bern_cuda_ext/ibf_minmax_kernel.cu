@@ -1,5 +1,7 @@
 #include <array>
 #include <iostream>
+#include <limits>
+#include <cassert>
 
 #include <torch/extension.h>
 
@@ -7,7 +9,6 @@
 #include <cuda_runtime.h>
 
 constexpr int BLOCK_SIZE = 256;
-constexpr int MAX_VARS = 20;
 
 template<typename scalar_t, int dim>
 using packed_accessor_t = torch::PackedTensorAccessor64<scalar_t, dim, torch::RestrictPtrTraits>;
@@ -33,8 +34,9 @@ WARP_REDUCE(warp_min, std::min)
 WARP_REDUCE(warp_max, std::max)
 
 
-// TODO: CUDA doesn't provide an int-only pow?
-// Casting int to double to int may be undesirable.
+// TODO: CUDA doesn't provide an int-only pow.
+// This is only used once to determine the size of
+// the explicit Bernstein form tensor.
 int64_t int_pow(int base, int exp) {
   int64_t accum = 1;
   for (int i = 0; i < exp; ++i) {
@@ -52,19 +54,19 @@ void ibf_minmax_cuda_kernel(
 	const int nterms,
 	const int nvars,
 	const int max_degree,
-	const int ebf_size) {
+	const int64_t ebf_size) {
   const size_t local_tid = threadIdx.x;
   const size_t global_tid = blockIdx.x * blockDim.x + threadIdx.x;
   
-  __shared__ scalar_t block_outer[BLOCK_SIZE];
   __shared__ scalar_t block_min[BLOCK_SIZE];
   __shared__ scalar_t block_max[BLOCK_SIZE];
-
-  block_outer[local_tid] = 0;
-
-  if (global_tid < ebf_size) {
-    
+  block_min[local_tid] = std::numeric_limits<scalar_t>::max();
+  block_max[local_tid] = std::numeric_limits<scalar_t>::lowest();
+  
+  int64_t ebf_id = global_tid;
+  while (ebf_id < ebf_size) {
     // Step 1: compute sum of outer products for each term.
+    scalar_t thread_accum = 0;
     for (int term = 0; term < nterms; ++term) {
       // each global_tid must correspond to a unique sequence of powers in
       // each variable. To do this, we follow the same iteration as converting
@@ -75,30 +77,34 @@ void ibf_minmax_cuda_kernel(
       // Since each term is a tensor of the same size and shape,
       // we can reuse the same indexing scheme for each term.
       scalar_t local_result = 1;
-      int t = global_tid;
+      int64_t t = global_tid;
       for (int var = 0; var < nvars; ++var) {
         local_result *= poly[term][var][t % max_degree];
-        t /= max_degree;
+	t /= max_degree;
       }
-      block_outer[local_tid] += local_result;
+      thread_accum += local_result;
     }
 
-    block_min[local_tid] = block_outer[local_tid];
-    block_max[local_tid] = block_outer[local_tid];
+    block_min[local_tid] = std::min(block_min[local_tid], thread_accum);
+    block_max[local_tid] = std::max(block_max[local_tid], thread_accum);
+    ebf_id += gridDim.x;
+  }
 
+  __syncthreads();
+
+  // Step 2: Find the min and max for each CUDA block.
+  for (int s = BLOCK_SIZE/2; s > 32; s >>= 1) {
+    if (local_tid < s) {
+      block_min[local_tid] = std::min(block_min[local_tid], block_min[local_tid + s]);
+      block_max[local_tid] = std::max(block_max[local_tid], block_max[local_tid + s]);
+    }
     __syncthreads();
+  }
 
-    // Step 2: Find the min and max for each CUDA block.
-    for (int s = blockDim.x/2; s > 32; s >>= 1) {
-      if (local_tid < s) {
-        block_min[local_tid] = std::min(block_min[local_tid], block_min[local_tid + s]);
-        block_max[local_tid] = std::max(block_max[local_tid], block_max[local_tid + s]);
-      }
-    }
+  if (local_tid < 32) warp_min<scalar_t, BLOCK_SIZE>(block_min, local_tid);
+  if (local_tid < 32) warp_max<scalar_t, BLOCK_SIZE>(block_max, local_tid);
 
-    if (local_tid < 32) warp_min<scalar_t, BLOCK_SIZE>(block_min, local_tid);
-    if (local_tid < 32) warp_max<scalar_t, BLOCK_SIZE>(block_max, local_tid);
-
+  if (local_tid == 0) {
     local_min[blockIdx.x] = block_min[0];
     local_max[blockIdx.x] = block_max[0];
   }
@@ -108,14 +114,17 @@ void ibf_minmax_cuda_kernel(
  * Compute the min/max of a Bernstein polynomial in implicit form.
  */ 
 torch::Tensor ibf_minmax_cuda(torch::Tensor poly) {
+  assert(poly.device().is_cuda());
+  
   int nterms = poly.size(0);
   int nvars = poly.size(1);
   int max_degree = poly.size(2);
 
-  int64_t ebf_size = int_pow(nvars, max_degree);
+  int64_t ebf_size = int_pow(max_degree, nvars);
   int threads = BLOCK_SIZE;
-  int blocks = static_cast<int>(std::ceil(static_cast<float>(ebf_size) /
-			                  static_cast<float>(threads)));
+  int64_t blocks = static_cast<int64_t>(std::ceil(static_cast<double>(ebf_size) /
+			                  	  static_cast<double>(threads)));
+  blocks = std::min(blocks, static_cast<int64_t>(int_pow(2, 31)));
 
   auto block_min = torch::zeros(blocks).to(poly.device());
   auto block_max = torch::zeros(blocks).to(poly.device());
