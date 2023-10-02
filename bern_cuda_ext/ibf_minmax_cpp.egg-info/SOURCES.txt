@@ -1,7 +1,0 @@
-ibf_minmax.cpp
-ibf_minmax_kernel.cu
-setup.py
-ibf_minmax_cpp.egg-info/PKG-INFO
-ibf_minmax_cpp.egg-info/SOURCES.txt
-ibf_minmax_cpp.egg-info/dependency_links.txt
-ibf_minmax_cpp.egg-info/top_level.txt

@@ -1,3 +1,0 @@
-# ninja log v5
-0	23498	1695936073399036949	/home/wael/bernstein_gpu_codes/BERN-NN-Implicit_rep/bern_cuda_ext/build/temp.linux-x86_64-cpython-311/ibf_minmax.o	dab7f668a2a4a236
-1	58787	1695936108695496493	/home/wael/bernstein_gpu_codes/BERN-NN-Implicit_rep/bern_cuda_ext/build/temp.linux-x86_64-cpython-311/ibf_minmax_kernel.o	89a24b9114060877
