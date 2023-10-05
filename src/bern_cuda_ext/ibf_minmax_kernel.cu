@@ -9,6 +9,7 @@
 #include <cuda_runtime.h>
 
 constexpr int BLOCK_SIZE = 256;
+constexpr int WARP_SIZE = 32;
 
 template<typename scalar_t, int dim>
 using packed_accessor_t = torch::PackedTensorAccessor64<scalar_t, dim, torch::RestrictPtrTraits>;
@@ -17,6 +18,8 @@ using packed_accessor_t = torch::PackedTensorAccessor64<scalar_t, dim, torch::Re
  * This performs a reduction of data in a single GPU warp.
  * `op` can be any binary operation. 
  * The result of the reduction is stored in block[0]
+ * This is based on these slides:
+ * https://developer.download.nvidia.com/assets/cuda/files/reduction.pdf
  */
 #define WARP_REDUCE(name,op)                                                          \
 template<typename scalar_t, int block_size>                                           \
@@ -34,7 +37,7 @@ WARP_REDUCE(warp_min, std::min)
 WARP_REDUCE(warp_max, std::max)
 
 
-// TODO: CUDA doesn't provide an int-only pow.
+// TODO: Replace with safer pow... 
 // This is only used once to determine the size of
 // the explicit Bernstein form tensor.
 int64_t int_pow(int base, int exp) {
@@ -93,7 +96,7 @@ void ibf_minmax_cuda_kernel(
   __syncthreads();
 
   // Step 2: Find the min and max for each CUDA block.
-  for (int s = BLOCK_SIZE/2; s > 32; s >>= 1) {
+  for (int s = BLOCK_SIZE/2; s > WARP_SIZE; s >>= 1) {
     if (local_tid < s) {
       block_min[local_tid] = std::min(block_min[local_tid], block_min[local_tid + s]);
       block_max[local_tid] = std::max(block_max[local_tid], block_max[local_tid + s]);
@@ -101,8 +104,8 @@ void ibf_minmax_cuda_kernel(
     __syncthreads();
   }
 
-  if (local_tid < 32) warp_min<scalar_t, BLOCK_SIZE>(block_min, local_tid);
-  if (local_tid < 32) warp_max<scalar_t, BLOCK_SIZE>(block_max, local_tid);
+  if (local_tid < WARP_SIZE) warp_min<scalar_t, BLOCK_SIZE>(block_min, local_tid);
+  if (local_tid < WARP_SIZE) warp_max<scalar_t, BLOCK_SIZE>(block_max, local_tid);
 
   if (local_tid == 0) {
     local_min[blockIdx.x] = block_min[0];
@@ -114,8 +117,6 @@ void ibf_minmax_cuda_kernel(
  * Compute the min/max of a Bernstein polynomial in implicit form.
  */ 
 torch::Tensor ibf_minmax_cuda(torch::Tensor poly) {
-  assert(poly.device().is_cuda());
-  
   int nterms = poly.size(0);
   int nvars = poly.size(1);
   int max_degree = poly.size(2);
@@ -126,8 +127,12 @@ torch::Tensor ibf_minmax_cuda(torch::Tensor poly) {
 			                  	  static_cast<double>(threads)));
   blocks = std::min(blocks, static_cast<int64_t>(int_pow(2, 31)));
 
-  auto block_min = torch::zeros(blocks).to(poly.device());
-  auto block_max = torch::zeros(blocks).to(poly.device());
+  auto options = torch::TensorOptions()
+	  .dtype(poly.dtype())
+	  .device(poly.device());
+
+  auto block_min = torch::zeros(blocks, options);
+  auto block_max = torch::zeros(blocks, options);
 
   AT_DISPATCH_FLOATING_TYPES(poly.type(), "ibf_cuda_minmax", ([&] {
     ibf_minmax_cuda_kernel<scalar_t><<<blocks, threads>>>(
@@ -140,7 +145,7 @@ torch::Tensor ibf_minmax_cuda(torch::Tensor poly) {
       ebf_size);
   }));
 
-  auto minmax = torch::empty(2).to(poly.device());
+  auto minmax = torch::empty(2, options);
   minmax[0] = std::get<0>(block_min.min(0)).item();
   minmax[1] = std::get<0>(block_max.max(0)).item();
 
