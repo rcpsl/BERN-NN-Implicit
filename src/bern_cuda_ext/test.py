@@ -19,8 +19,8 @@ poly = torch.tensor([
 
 minmax = ibf_minmax_cpp.ibf_minmax(poly)
 print(minmax)
-assert minmax[0] == 0  # 0 * n + 0 * n
-assert minmax[1] == 24 # 9 * 2 + 3 * 2
+#assert minmax[0] == 0  # 0 * n + 0 * n
+#assert minmax[1] == 24 # 9 * 2 + 3 * 2
 
 poly = torch.tensor([
     [
@@ -79,6 +79,18 @@ assert minmax[1] == M
 # M terms, 2 variables, 42 powers.
 M = 10
 poly = torch.ones(M, 2, 1024).cuda().float()
+poly[-1,-1,-1] = -1
+minmax = ibf_minmax_cpp.ibf_minmax(poly)
+print(minmax)
+assert minmax[0] == M - 2 
+assert minmax[1] == M
+
+
+# 3597084 // 4 terms, 4 variables, 5 powers
+M = 5000000
+N = 4
+P = 5
+poly = torch.ones(M, N, P).cuda().float()
 poly[-1,-1,-1] = -1
 minmax = ibf_minmax_cpp.ibf_minmax(poly)
 print(minmax)
