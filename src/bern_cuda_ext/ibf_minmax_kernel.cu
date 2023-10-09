@@ -16,28 +16,6 @@ constexpr int WARP_SIZE = 32;
 template<typename scalar_t, int dim>
 using packed_accessor_t = torch::PackedTensorAccessor64<scalar_t, dim, torch::RestrictPtrTraits>;
 
-/**
- * This performs a reduction of data in a single GPU warp.
- * `op` can be any binary operation. 
- * The result of the reduction is stored in block[0]
- * This is based on these slides:
- * https://developer.download.nvidia.com/assets/cuda/files/reduction.pdf
- */
-#define WARP_REDUCE(name,op)                                                          \
-template<typename scalar_t, int block_size>                                           \
-__device__                                                                            \
-scalar_t name(volatile scalar_t* block, int local_tid) { 			      \
-  if (block_size >= 64) block[local_tid] = op(block[local_tid], block[local_tid+32]); \
-  if (block_size >= 32) block[local_tid] = op(block[local_tid], block[local_tid+16]); \
-  if (block_size >= 16) block[local_tid] = op(block[local_tid], block[local_tid+8]);  \
-  if (block_size >=  8) block[local_tid] = op(block[local_tid], block[local_tid+4]);  \
-  if (block_size >=  4) block[local_tid] = op(block[local_tid], block[local_tid+2]);  \
-  if (block_size >=  2) block[local_tid] = op(block[local_tid], block[local_tid+1]);  \
-}
-
-WARP_REDUCE(warp_min, std::min)
-WARP_REDUCE(warp_max, std::max)
-
 __host__ __device__
 int64_t int_pow(int base, int exp) {
   int64_t accum = 1;
@@ -56,12 +34,7 @@ void ibf_minmax_cuda_kernel(
 	const int nvars,
 	const int max_degree,
 	const int64_t ebf_size) { 
-  int tidx = threadIdx.x;
-  int tidy = threadIdx.y;
-
-  // global x idx determines the term.
   int term_id = blockIdx.x;
-
   while (term_id < nterms) {
     int ebf_id = threadIdx.x;
     while (ebf_id < ebf_size) {
@@ -83,13 +56,6 @@ void ibf_minmax_cuda_kernel(
     } 
     term_id += gridDim.x;
   }
-
-  //__syncthreads();
-
-  //int col_id = threadIdx.x;
-  //while (col_id < ebf_size) {
-  //  col_id += blockDim.x;
-  //}
 }
 
 /**
