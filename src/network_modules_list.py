@@ -371,7 +371,7 @@ if __name__ == "__main__":
     # print(inputs)
     ### convert inputs to a sparse representation
     # inputs = inputs.to_sparse()
-    network_size = [n_vars, 50, 50, 50,  1]
+    network_size = [n_vars, 4, 4, 4,  1]
     network_weights = []
     network_biases = []
 
