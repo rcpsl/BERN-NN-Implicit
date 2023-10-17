@@ -61,9 +61,12 @@ def ibf_tensor_prod_input_weights(n_vars, inputs, weights):
     # Element-wise product scales one vector of each term by corresponding weight.
     scaled = inputs * ones
 
+
     # Reshaping essentially concatenates all terms into one large polynomial.
     # This is the sum of the scaled polynomials
     return scaled.reshape(-1, inputs.size(1))
+
+
 
 
 
@@ -96,21 +99,40 @@ class NodeModule(torch.nn.Module):
         u = ibf_minmax_cpp.ibf_minmax(input_over_clone)[1]
 
         bounds = torch.tensor([l, u])
-
+        
+        ### if u <= 0: return 0
+        # if u <= 0.0:
+            # return torch.tensor([0.]), torch.tensor([0.])
+        print('l, u ', l, u)
+        
         ### compute quadratic upper and lower polynomials coefficients from bounds = [l, u]
         coeffs_obj = relu_monom_coeffs(bounds)
         relu_coeffs_under = coeffs_obj.get_monom_coeffs_under(bounds)
         relu_coeffs_over = coeffs_obj.get_monom_coeffs_over(bounds)
-
-        ### pass the node's inputs input_under and input_over through the node's quadratic polynomials coefficents  relu_coeffs_over and relu_coeffs_under
-        num_terms_input_under = input_under.size(0) // self.n_vars
-        # print(input_under)
-        # print(input_under.size(0))
-        num_terms_input_over = input_over.size(0) // self.n_vars
-        ### degree_tensor = torch.tensor([degree, degree])
-        degree_tensor = self.degree * torch.ones(self.n_vars, dtype = torch.int32)
-        relu_node_under = quad_of_poly(self.n_vars, input_under, num_terms_input_under, degree_tensor, relu_coeffs_under)
-        relu_node_over = quad_of_poly(self.n_vars, input_over, num_terms_input_over, degree_tensor, relu_coeffs_over)
+        # print('relu_coeffs_under ', relu_coeffs_under)
+        # print('relu_coeffs_over ', relu_coeffs_over)
+        ### if relu_coeffs_under is all zeros then make relu_node_under empty tensor
+        if torch.all(relu_coeffs_under == 0):
+            print('all relu_coeffs_under are zeros')
+            relu_node_under = torch.empty(0)
+            ### now keep the same next steps for relu_node_over
+            ### pass the node's inputs input_over through the node's quadratic polynomials coefficents  relu_coeffs_over 
+            # print(input_under)
+            # print(input_under.size(0))
+            num_terms_input_over = input_over.size(0) // self.n_vars
+            ### degree_tensor = torch.tensor([degree, degree])
+            degree_tensor = self.degree * torch.ones(self.n_vars, dtype = torch.int32)
+            relu_node_over = quad_of_poly(self.n_vars, input_over, num_terms_input_over, degree_tensor, relu_coeffs_over)
+        else:
+            ### pass the node's inputs input_under and input_over through the node's quadratic polynomials coefficents  relu_coeffs_over and relu_coeffs_under
+            num_terms_input_under = input_under.size(0) // self.n_vars
+            # print(input_under)
+            # print(input_under.size(0))
+            num_terms_input_over = input_over.size(0) // self.n_vars
+            ### degree_tensor = torch.tensor([degree, degree])
+            degree_tensor = self.degree * torch.ones(self.n_vars, dtype = torch.int32)
+            relu_node_under = quad_of_poly(self.n_vars, input_under, num_terms_input_under, degree_tensor, relu_coeffs_under)
+            relu_node_over = quad_of_poly(self.n_vars, input_over, num_terms_input_over, degree_tensor, relu_coeffs_over)
 
         return relu_node_under, relu_node_over
 
@@ -141,24 +163,44 @@ class LayerModule(torch.nn.Module):
         ### call self.node object
         self.node = NodeModule(self.n_vars, self.degree)
 
-    def forward(self, layer_inputs_under, layer_inputs_over):
+    def forward(self, layer_inputs_under, layer_inputs_over, indices_zero_input_under):
+        ### check if indices_zero_input_under is empty, if not then remove the corresponding colums from self._layer_weights_pos and self._layer_weights_neg and put them  in new tensors layer_weights_input_under _layer_weights_pos_input_under and _layer_weights_neg_input_under
+        if len(indices_zero_input_under) != 0:
+            _layer_weights_pos_input_under = self._layer_weights_pos[:, [i for i in range( self._layer_weights_pos.shape[1]) if i not in indices_zero_input_under]]
+            _layer_weights_neg_input_under = self._layer_weights_neg[:, [i for i in range( self._layer_weights_neg.shape[1]) if i not in indices_zero_input_under]]
+
         ### for each node in the layer: propagate layer_inputs_under and layer_inputs_over through the node's weights and pass them through the node 
         ### TO DO: parallize this operation by batches of nodes
         results_under = []
         results_over = []
+        ### get the indices of the node_output_under that are zero: start with an empty list
+        indices_zero_node_output_under = []
         # print(self.layer_size)
         for i in range(self.layer_size):
             ### get node 's lower input node_under 
             # print(layer_inputs_over.size())
             # print(torch.reshape(self._layer_weights_neg[i], (self._layer_weights_neg.size(1), 1)).size())
+            print('layer_inputs_oversize ', layer_inputs_over.size())
+            print('lenght of self._layer_weights_neg', self._layer_weights_neg[i].size())
             combined_node_under_1 = ibf_tensor_prod_input_weights(self.n_vars, layer_inputs_over, torch.reshape(self._layer_weights_neg[i], (self._layer_weights_neg.size(1), 1)))
-            combined_node_under_2 = ibf_tensor_prod_input_weights(self.n_vars, layer_inputs_under, torch.reshape(self._layer_weights_pos[i], (self._layer_weights_pos.size(1), 1)))
+            if len(indices_zero_input_under) != 0:
+                combined_node_under_2 = ibf_tensor_prod_input_weights(self.n_vars, layer_inputs_under, torch.reshape(_layer_weights_pos_input_under[i], (_layer_weights_pos_input_under.size(1), 1)))
+                # print('size of combined_node_under_1 ', combined_node_under_1.size())
+                # print('size of combined_node_under_2 ', combined_node_under_2.size())
+            else:
+                combined_node_under_2 = ibf_tensor_prod_input_weights(self.n_vars, layer_inputs_under, torch.reshape(self._layer_weights_pos[i], (self._layer_weights_pos.size(1), 1)))
+                
+            
             node_under = torch.cat((combined_node_under_1, combined_node_under_2), 0)
             node_under = add_with_constant(self.n_vars, node_under, self.layer_biases[i])
 
             ### get node 's upper input node_over
             combined_node_over_1 = ibf_tensor_prod_input_weights(self.n_vars, layer_inputs_over, torch.reshape(self._layer_weights_pos[i], (self._layer_weights_pos.size(1), 1)))
-            combined_node_over_2 = ibf_tensor_prod_input_weights(self.n_vars, layer_inputs_under, torch.reshape(self._layer_weights_neg[i], (self._layer_weights_neg.size(1), 1)))
+            if len(indices_zero_input_under) != 0:
+                combined_node_over_2 = ibf_tensor_prod_input_weights(self.n_vars, layer_inputs_under, torch.reshape(_layer_weights_neg_input_under[i], (_layer_weights_neg_input_under.size(1), 1)))
+            else:
+                combined_node_over_2 = ibf_tensor_prod_input_weights(self.n_vars, layer_inputs_under, torch.reshape(self._layer_weights_neg[i], (self._layer_weights_neg.size(1), 1)))
+
             node_over = torch.cat((combined_node_over_1, combined_node_over_2), 0)
             node_over = add_with_constant(self.n_vars, node_over, self.layer_biases[i])
 
@@ -167,14 +209,21 @@ class LayerModule(torch.nn.Module):
             # print(node_over)
             node_output_under, node_output_over =  self.node(node_under, node_over)
 
-           
-
-            ### append the results in results_under and results_over
-            results_under.append(node_output_under)
-            results_over.append(node_output_over)
-
-
-        return torch.stack(results_under).reshape(-1, node_output_under.size(1)), torch.stack(results_over).reshape(-1, node_output_over.size(1))
+            ### if node_output_under is empty then append the index of the node to indices_zero_node_output_under
+            if node_output_under.size(0) == 0:
+                indices_zero_node_output_under.append(i)
+                ### append only node_output_over to results_over
+                results_over.append(node_output_over)
+            else:
+                ### append the results in results_under and results_over
+                results_under.append(node_output_under)
+                results_over.append(node_output_over)
+            # print('size of node_output_over size of node_output_over size of node_output_over size of node_output_over size of node_output_over ', node_output_over.size())
+        ### make that indices_zero_node_output_under is a tensor
+        indices_zero_node_output_under = torch.tensor(indices_zero_node_output_under)
+        # print('indices_zero_node_output_under ', indices_zero_node_output_under)
+        # return torch.cat(results_under, dim = 0).reshape(-1, node_output_over.size(1)), torch.cat(results_over, dim = 0).reshape(-1, node_output_over.size(1)), indices_zero_node_output_under
+        return torch.cat(results_under, dim = 0), torch.cat(results_over, dim = 0), indices_zero_node_output_under
 
 
 
@@ -202,11 +251,19 @@ class NetworkModule(torch.nn.Module):
 
         ### propagate the inputs_over and inputs_under through each layer in the network
     def forward(self, inputs):
-        inputs_over = inputs
         inputs_under = inputs
+        inputs_over = inputs
+        ### indices_zero_input_under: the indices of the inputs_under that are zero: start we emty indices_zero_input_under at the beginning
+        indices_zero_input_under = torch.empty(0, dtype = torch.int32)
+        i = 0
         for layer in self.layers:
+            print('################################################# layer number ', i, ' #################################################')
             print(inputs_under.size())
-            inputs_under, inputs_over = layer(inputs_under, inputs_over)
+            numb_zeros_perc = (inputs_under.size(0) * inputs_under.size(1) - torch.count_nonzero(inputs_under)) / (inputs_under.size(0) * inputs_under.size(1))
+            # print(numb_zeros_perc)
+            print('indices_zero_input_under ', indices_zero_input_under)
+            inputs_under, inputs_over, indices_zero_input_under = layer(inputs_under, inputs_over, indices_zero_input_under)
+            i += 1
         return inputs_under, inputs_over
 
 
@@ -217,6 +274,8 @@ class NetworkModule(torch.nn.Module):
 if __name__ == "__main__":
     # # Set the default tensor type to be 32-bit float on the GPU
     torch.set_default_tensor_type('torch.cuda.FloatTensor')
+    # # set a random seed
+    torch.manual_seed(0)
 
 
     # ### 1) test generate_inputs function 
@@ -268,6 +327,8 @@ if __name__ == "__main__":
     n_vars = 4
     intervals = torch.tensor([[1., 2.], [3., 4.], [7., 9.], [5., 6.]])
     inputs = generate_inputs(n_vars, intervals, device = 'cuda')
+    ### convert inputs to a sparse representation
+    # inputs = inputs.to_sparse()
     network_size = [4, 3, 3, 1]
     network_weights = []
     network_biases = []

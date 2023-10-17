@@ -128,23 +128,32 @@ def degree_elevation(pA, n, tA, degree, new_degree):
     # print(res)
     # print(res.size(0))
     ### perform row-wise convolution between res and C_diff
-    result = [torch.nn.functional.conv1d(res[i, :].reshape(1, -1).reshape(1, 1, -1),      torch.flip(C_diff[i, :].reshape(1, -1), dims=(1,)).reshape(1, 1, -1), padding = torch.max(l_diff).item()   ).flatten()             for i in range(res.size(0) )]
+    # print('res', res)
+    # print('C_diff', C_diff)
+    # print('l_diff', l_diff)
+    # print('new_degree', new_degree)
+
+    ### compute the convolution of res and C_diff 
+    result = [torch.nn.functional.conv1d(res[i, :].reshape(1, -1).reshape(1, 1, -1),      torch.flip(C_diff[i, :].reshape(1, -1), dims=(1,)).reshape(1, 1, -1), padding = torch.max(l_diff).int().item()   ).flatten()             for i in range(res.size(0) )]
     # print(result)
     result = torch.stack(result)
 
-    
+    # print('result', result)
+    # print('C_new_degree', C_new_degree)
     ### perform row-wise division between res_conv and C_new_degree for non-zero elements of C_new_degree
     result =  torch.where(C_new_degree != 0, torch.div(result, C_new_degree), 0)
     
-    ### pad result tensor with 0 columns of number max(new_degree) - max(degree)
-
-    pA_elevated = torch.nn.functional.pad(pA, (0, torch.max(l_diff)))
+    ### pad result tensor with 0 columns of number max(new_degree) - max(degree) 
+    pA_elevated = torch.nn.functional.pad(pA, (0, torch.max(l_diff).int().item()))
 
     ### replace the rows of pA_elevated with the rows of result given by the row indices idx_list
 
     # print(pA_elevated)
     # print(idx_list)
     # print(result)
+    # print('pA_elevated', pA_elevated)
+    # print('idx_list', idx_list)
+    # print('result', result)
     if len(I_non_zero) == n:
         pA_elevated = result
     else:
@@ -166,7 +175,14 @@ def degree_elevation(pA, n, tA, degree, new_degree):
 ###################################################    
 
 def sum_2_polys(n, pA, tA, degree_A, pB, tB, degree_B):
-     
+    
+    ### if degree_A is all zeros then return pB
+    if torch.all(degree_A == 0):
+        return pB
+    ### if degree_B is all zeros then return pA
+    elif torch.all(degree_B == 0):
+        return pA
+
     ### concatenate pA and pB 
     if torch.all(degree_A == degree_B):
         return torch.cat((pA, pB), 0)
@@ -186,6 +202,11 @@ def sum_2_polys(n, pA, tA, degree_A, pB, tB, degree_B):
     ### degree elevate pA and pB concatenate it with pB
     else:
         degree_max = torch.max(degree_A, degree_B)
+        # print('pA', pA)
+        # print('n', n)
+        # print('tA', tA)
+        # print('degree_A', degree_A)
+        # print('degree_max', degree_max)
         pA_elevated = degree_elevation(pA, n, tA, degree_A, degree_max)
         pB_elevated = degree_elevation(pB, n, tB, degree_B, degree_max)
         return torch.cat((pA_elevated, pB_elevated), 0)
@@ -201,13 +222,26 @@ def mult_2_terms(n, TA, C_A, TB, C_B, C_AmulB):
     T_C_A = torch.mul(TA, C_A)
     T_C_B = torch.mul(TB, C_B)
 
-    ### perform row-wise convolution between T_C_A and T_C_B
-    res = [torch.nn.functional.conv1d(T_C_A[i, :].reshape(1, -1).reshape(1, 1, -1),      torch.flip(T_C_B[i, :].reshape(1, -1), dims=(1,)).reshape(1, 1, -1), padding = T_C_B.size(1) - 1   ).flatten()             for i in range(n)]
-    ### stack the rows
-    res = torch.stack(res) 
+    # ### 1) perform row-wise convolution between T_C_A and T_C_B   using for loop
+    # res = [torch.nn.functional.conv1d(T_C_A[i, :].reshape(1, -1).reshape(1, 1, -1),      torch.flip(T_C_B[i, :].reshape(1, -1), dims=(1,)).reshape(1, 1, -1), padding = T_C_B.size(1) - 1   ).flatten()             for i in range(n)]
+    # ### stack the rows
+    # res = torch.stack(res) 
+
+    ### 2) perform row-wise convolution between T_C_A and T_C_B   without using for loop
+    # Assuming T_C_A and T_C_B are both 2D tensors of shape (n, m)
+    n, m = T_C_A.shape
+    # Reshape T_C_A and T_C_B to have an additional channel dimension
+    T_C_A = T_C_A.unsqueeze(1)  # Shape: (n, 1, m)
+    T_C_B = T_C_B.unsqueeze(1)  # Shape: (n, 1, m)
+    # Flip T_C_B
+    T_C_B_flipped = torch.flip(T_C_B, dims=(2,))  # Shape: (n, 1, m)
+    # Perform convolution
+    res = torch.nn.functional.conv1d(T_C_A, T_C_B_flipped, padding=m - 1).flatten(1)  # Shape: (n, m)
+    res = res.reshape(-1, 2 * m - 1)
+    res = res[torch.arange(0, res.size(0), step = n + 1)]
     
     ### perform row-wise division between res and C_AmulB for non-zero elements of C_AmulB
-    res =  torch.where(C_AmulB != 0, torch.div(res, C_AmulB), 0)
+    res =  torch.where(C_AmulB != 0, torch.div(res, C_AmulB), torch.tensor(0.))
 
     return res
 
@@ -231,16 +265,81 @@ def mult_2_polys(n, pA, tA, degree_A,  pB, tB, degree_B):
     ### compute 2D binomial coefficients for degree_mul = degree_A + degree_B
     degree_mul = degree_A + degree_B
     C_AmulB = generate_binom_coeffs(degree_mul)
-
+    print('22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222')
     ### perform multiplication between each term of pA to all the terms of pB
+    print('pAsize', pA.size())
     res = [mult_2_terms(n, pA[i * n : (i + 1) * n, :], C_A, pB[j * n : (j + 1) * n, :], C_B, C_AmulB) for j in range(tB)   for i in range(tA)]
+    print('22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222')
     
     # print(res)
     ### stack the rows and reshape the final result to (number_of rows, torch.max(degree_mul) + 1)
-    res = torch.stack(res).reshape(-1, torch.max(degree_mul) + 1)
+    res = torch.stack(res).reshape(-1, torch.max(degree_mul).int().item() + 1)
 
     return res
 
+
+###################################################
+### performs power 2 of a 2D polynomial tensor TA  \
+### tA: number of terms in pA
+### degree_A: degree of pA
+###################################################
+def poly_pow_2(n_vars, TA, tA, degree_A):
+    # print('tA', tA)
+    ###create TA_mod1 = repeated every n_vars rows of TA tA times along the first dimension
+    TA_chunks = torch.chunk(TA, tA)
+    # print('len(TA_chunks)', len(TA_chunks))
+    TA_mod1 = [TA_chunks[i].repeat(tA - i, 1) for i in  range(tA)]
+    TA_mod1 = torch.cat(TA_mod1, dim=0)
+    # print('TA_mod1_size', TA_mod1.size())
+    ### create TA_mod2 = reapeted TA tA times along the first dimension
+    TA_mod2 = [TA[i * n_vars:] for i in  range(tA)]
+    # print('TA_mod2', TA_mod2)
+    TA_mod2 = torch.cat(TA_mod2, dim=0)
+    # print('TA_mod2_size', TA_mod2.size())
+    ### compute 2D binomial coefficients for degree_A 
+    C_A = generate_binom_coeffs(degree_A)
+    ### repeat C_A (tA ** 2 + tA) / 2 times along the first dimension
+    C_A = C_A.repeat(int((tA ** 2 + tA) / 2), 1)
+    # print('C_A_size', C_A.size())
+
+    ### compute 2D binomial coefficients for degree_mul = 2 * degree_A 
+    degree_mul = 2 * degree_A 
+    C_AmulA = generate_binom_coeffs(degree_mul)
+    ### repeat C_AmulA (tA ** 2 + tA) / 2 times along the first dimension
+    C_AmulA = C_AmulA.repeat(int((tA ** 2 + tA) / 2), 1)
+    # print('C_AmulA_size', C_AmulA.size())
+
+    ### perform multpilcation point-wise between TA_mod1 and CA; TA_mod2 and CA
+    # print(TA_mod1.shape)
+    # print(C_A.shape)
+    T_C_A = torch.mul(TA_mod1, C_A)
+    T_C_B = torch.mul(TA_mod2, C_A)
+    
+
+    # Assuming T_C_A and T_C_B are both 2D tensors of shape (n, m)
+    n_rows, m = T_C_A.shape
+    # Reshape T_C_A and T_C_B to have an additional channel dimension
+    T_C_A = T_C_A.view((1, n_rows, m))  # Shape: (1, n_rows, m)
+    T_C_B = T_C_B.view((n_rows, 1, m))  # Shape: (n_rows, 1, m)
+    # Flip T_C_B
+    T_C_B_flipped = torch.flip(T_C_B, dims=(2,))  # Shape: (1, n_rows, m)
+    del T_C_B
+    # Perform convolution
+
+    res = torch.nn.functional.conv1d(T_C_A, T_C_B_flipped, padding  = m - 1, groups = n_rows).flatten(1)  # Shape: (n_rows, m)
+    del T_C_A
+    del T_C_B_flipped
+    res = res.reshape(-1, 2 * m - 1)
+    # print(res)
+        
+    ### perform row-wise division between res and C_AmulA for non-zero elements of C_AmulA
+    print(res.shape)
+    print(C_AmulA.shape)
+    # res =  torch.where(C_AmulA != 0, torch.div(res, C_AmulA), torch.tensor(0.))
+    res /= C_AmulA
+    ### check where is Nan and replace it with 0
+    torch.nan_to_num(res, nan=0.0, out=res)
+    return res
 
 ###################################################
 ### given a polynomial pA and quadratic polynomial
@@ -258,8 +357,9 @@ def quad_of_poly(n, pA, tA, degree_A, coeffs):
     # print(degree_A)
     # print(tA)
     # print(pA.size(0) // n)
-    res = mult_2_polys(n, pA, tA, degree_A,  pA, tA, degree_A)
-    ### compute a * pA ** 2
+    # res = mult_2_polys(n, pA, tA, degree_A,  pA, tA, degree_A)
+    res = poly_pow_2(n, pA, tA, degree_A)
+    ### compute a * pA ** 2 
     term1 = mult_with_constant(n, res, tA, degree_A, coeffs[0])
     ### compute b * pA 
     term2 = mult_with_constant(n, pA, tA, degree_A, coeffs[1])
@@ -267,8 +367,9 @@ def quad_of_poly(n, pA, tA, degree_A, coeffs):
     t_term1 = term1.size(0) // n
     degree_term1 = 2 * degree_A
     term = sum_2_polys(n, term1, t_term1, degree_term1, term2, tA, degree_A)
-    ### sum term + c; a * pA ** 2 + b * pA + c
-    res = add_with_constant(n, term, coeffs[2])
+    ### sum term + c if c != 0; a * pA ** 2 + b * pA + c
+    # if coeffs[2] != 0.0:
+    #     res = add_with_constant(n, term, coeffs[2])
     return res
 
 
