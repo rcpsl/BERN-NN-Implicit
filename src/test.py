@@ -184,12 +184,12 @@ import torch
 
 
 ### perform row-wise convolution between T_C_A and T_C_B
-n = 2
-T_C_A = torch.tensor([[1.0, 2.0, 8.0, 4.0, 5.],[3.0, 4.0, 7.0, 3.0, 5.]])
-T_C_B = torch.tensor([[0.5, 0.0, 3.0, 2.0, 5.],[1.0, 0.0, 5.0, 0.0, 5.]])
-res = [torch.nn.functional.conv1d(T_C_A[i, :].reshape(1, -1).reshape(1, 1, -1),      torch.flip(T_C_B[i, :].reshape(1, -1), dims=(1,)).reshape(1, 1, -1), padding = T_C_B.size(1) - 1   ).flatten()             for i in range(n)]
-res = torch.stack(res) 
-print(res)
+# n = 2
+# T_C_A = torch.tensor([[1.0, 2.0, 8.0, 4.0, 5.],[3.0, 4.0, 7.0, 3.0, 5.]])
+# T_C_B = torch.tensor([[0.5, 0.0, 3.0, 2.0, 5.],[1.0, 0.0, 5.0, 0.0, 5.]])
+# res = [torch.nn.functional.conv1d(T_C_A[i, :].reshape(1, -1).reshape(1, 1, -1),      torch.flip(T_C_B[i, :].reshape(1, -1), dims=(1,)).reshape(1, 1, -1), padding = T_C_B.size(1) - 1   ).flatten()             for i in range(n)]
+# res = torch.stack(res) 
+# print(res)
 
 
 # # Assuming T_C_A and T_C_B are both 2D tensors of shape (n, m)
@@ -206,17 +206,17 @@ print(res)
 # print(res)
 
 
-# Assuming T_C_A and T_C_B are both 2D tensors of shape (n, m)
-n, m = T_C_A.shape
-# Reshape T_C_A and T_C_B to have an additional channel dimension
-T_C_A = T_C_A.view((1, n, m))  # Shape: (1, n, m)
-T_C_B = T_C_B.view((n, 1, m))  # Shape: (n, 1, m)
-# Flip T_C_B
-T_C_B_flipped = torch.flip(T_C_B, dims=(2,))  # Shape: (1, n, m)
-# Perform convolution
-res = torch.nn.functional.conv1d(T_C_A, T_C_B_flipped, padding  = m - 1, groups= n).flatten(1)  # Shape: (n, m)
-res = res.reshape(-1, 2 * m - 1)
-print(res)
+# # Assuming T_C_A and T_C_B are both 2D tensors of shape (n, m)
+# n, m = T_C_A.shape
+# # Reshape T_C_A and T_C_B to have an additional channel dimension
+# T_C_A = T_C_A.view((1, n, m))  # Shape: (1, n, m)
+# T_C_B = T_C_B.view((n, 1, m))  # Shape: (n, 1, m)
+# # Flip T_C_B
+# T_C_B_flipped = torch.flip(T_C_B, dims=(2,))  # Shape: (1, n, m)
+# # Perform convolution
+# res = torch.nn.functional.conv1d(T_C_A, T_C_B_flipped, padding  = m - 1, groups= n).flatten(1)  # Shape: (n, m)
+# res = res.reshape(-1, 2 * m - 1)
+# print(res)
 
 
 
@@ -404,45 +404,152 @@ import torch.nn as nn
 import time
 
 # Define your function that works with PyTorch tensors
-def your_function(args):
-    result = args[0] + args[1]
-    return result
+# def your_function(args):
+#     result = args[0] + args[1]
+#     return result
 
 
-class mult_2_terms(torch.nn.Module):
-    def __init__(self, n):
-        super().__init__()
-        self.n = 1
+# class mult_2_terms(torch.nn.Module):
+#     def __init__(self, n):
+#         super().__init__()
+#         self.n = 1
 
-    def forward(self, args):
-        print('#####################################################')
-        print('args', args)
-        output = your_function(args) 
-        return output
+#     def forward(self, args):
+#         print('#####################################################')
+#         print('args', args)
+#         output = your_function(args) 
+#         return output
 
  
 
-# List of arguments for your model
-args = torch.tensor([[1, 2, 3, 4, 5, 1, 2, 3, 4, 5] for _ in range(20)])
+# # List of arguments for your model
+# args = torch.tensor([[1, 2, 3, 4, 5, 1, 2, 3, 4, 5] for _ in range(20)])
 
-print(args)
-
-
-time1 = time.time()
-# # Move the input data to the GPU
-device = torch.device('cuda')
-args = args.to(device)
-# define the model
-model = mult_2_terms(5) 
-# Wrap your function with DataParallel
-model_parallel = nn.DataParallel(model) 
-# Move the model to the GPU
-model_parallel.to(device)
-
-# Run the function in parallel on all available GPUs
-results = model_parallel(args)
-print(f"--- {time.time() - time1} seconds ---")
-
-print(results)
+# print(args)
 
 
+# time1 = time.time()
+# # # Move the input data to the GPU
+# device = torch.device('cuda')
+# args = args.to(device)
+# # define the model
+# model = mult_2_terms(5) 
+# # Wrap your function with DataParallel
+# model_parallel = nn.DataParallel(model) 
+# # Move the model to the GPU
+# model_parallel.to(device)
+
+# # Run the function in parallel on all available GPUs
+# results = model_parallel(args)
+# print(f"--- {time.time() - time1} seconds ---")
+
+# print(results)
+
+
+
+# pA = torch.tensor([[-1.5099e-02,  1.5099e-02, -1.5099e-02],
+#         [ 1.0000e+00,  1.0000e+00,  1.0000e+00],
+#         [ 1.0000e+00,  1.0000e+00,  1.0000e+00],
+#         [-1.2570e-02, -1.2434e-10,  1.2570e-02],
+#         [-1.0000e+00,  0.0000e+00,  1.0000e+00],
+#         [ 1.0000e+00,  1.0000e+00,  1.0000e+00]])
+# pB = torch.tensor([[-1.9140e-01,  1.9140e-01, -1.9140e-01],
+#         [ 1.0000e+00,  1.0000e+00,  1.0000e+00],
+#         [ 1.0000e+00,  1.0000e+00,  1.0000e+00],
+#         [ 1.0091e-01, -1.3028e-09, -1.0091e-01],
+#         [-1.0000e+00,  0.0000e+00,  1.0000e+00],
+#         [ 1.0000e+00,  1.0000e+00,  1.0000e+00]])
+
+# tA = 2
+# tB = 2
+# n = 3
+# res = [torch.cat(((pA[i * n , :] + pB[j * n, :]).unsqueeze(0), pA[i * n + 1 : (i + 1) * n, :])) for j in range(tB)   for i in range(tA) if torch.equal(pA[i * n + 1 : (i + 1) * n, :], pB[j * n + 1 : (j + 1) * n, :])]
+# res = torch.cat(res, dim=0)
+# print(res)
+
+# def process_TA(TA, tA):
+#         ###create TA_mod1 = repeated every n_vars rows of TA tA times along the first dimension
+#         TA_chunks = torch.chunk(TA, tA)
+#         # print('len(TA_chunks)', len(TA_chunks))
+#         TA_mod1 = [TA_chunks[i].repeat(tA - i, 1) for i in  range(tA)]
+#         TA_mod1 = torch.cat(TA_mod1, dim=0)
+#         return TA_mod1
+
+
+# def process_tensor_optimized(TA, tA, n):
+#     # Create a tensor that represents the repeat pattern.
+#     repeat_counts = torch.arange(start=tA, end=0, step=-1, device=TA.device)  # [tA, tA-1, ..., 1]
+
+#     # Create a tensor of indices that represent the positions.
+#     indices = torch.arange(start=0, end=tA, device=TA.device)  # [0, 1, ..., tA-1]
+
+#     # Repeat each index (tA - index) times. This creates a pattern of indices.
+#     index_tensor = torch.repeat_interleave(indices, repeat_counts)
+
+#     # Adjust the indices to account for 'n' rows in each chunk.
+#     # Each index needs to be converted to 'n' row indices, resulting in a flat array of row indices.
+#     expanded_index_tensor = index_tensor * n
+#     row_indices = expanded_index_tensor.view(-1, 1).repeat(1, n) + torch.arange(n, device=TA.device)
+
+#     # Flatten the row_indices for gathering operation.
+#     flat_row_indices = row_indices.view(-1)
+
+#     # Gather the rows from the original tensor.
+#     result_tensor = torch.index_select(TA, 0, flat_row_indices)
+
+#     return result_tensor
+
+
+
+
+
+
+
+
+
+# # Test the function with your parameters
+# torch.set_default_tensor_type('torch.cuda.FloatTensor')
+
+# n = 5
+# pA = torch.tensor([[1, 10, 5] for _ in range(n)])
+# tA = 30000
+# pA = pA.repeat(tA, 1)
+
+# # time_start = time.time()
+# # TA_mod1 = process_TA(pA, tA)
+# # time_end = time.time()
+# # print('time TA_mod1', time_end - time_start)
+
+# time_start = time.time()
+# TA_mod2 = process_tensor_optimized(pA, tA, n)
+# time_end = time.time()
+# print('time TA_mod2', time_end - time_start)
+
+# # The difference should be a tensor with all zeros, indicating identical results from both methods.
+# difference = TA_mod2 - TA_mod1
+# print('Difference:', torch.abs(difference).sum())  # This should be 0 if both tensors are identical.
+
+
+
+
+
+def modify_tensor(TA, tA, n_vars):
+    TA_mod2 = [TA[i * n_vars:].clone() for i in  range(tA)]
+    for i in range(len(TA_mod2)):
+        chunk = TA_mod2[i]
+        chunk[torch.arange(n_vars, chunk.size(0), n_vars)] *= 2
+
+    TA_mod2 = torch.cat(TA_mod2, dim=0)
+    return TA_mod2 
+
+
+
+# Test the function with your parameters
+torch.set_default_tensor_type('torch.cuda.FloatTensor')
+n = 3
+pA = torch.tensor([[1, 1, 1] for _ in range(n)])
+tA = 4
+pA = pA.repeat(tA, 1)
+# print(pA)
+res = modify_tensor(pA, tA, n)
+print(res)

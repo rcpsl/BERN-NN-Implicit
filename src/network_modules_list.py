@@ -205,7 +205,7 @@ class LayerModule(torch.nn.Module):
         results_over_degrees = []
         # print('layer_size ', self.layer_size)
         for i in range(self.layer_size):
-            print('########################## node number ', i, ' ##########################')
+            # print('########################## node number ', i, ' ##########################')
             ### get node 's lower input node_under 
             # print('layer_inputs_over_degrees ', layer_inputs_over_degrees)
             # print('layer_inputs_over ', layer_inputs_over)
@@ -224,6 +224,12 @@ class LayerModule(torch.nn.Module):
             node_under = sum_2_polys(self.n_vars, combined_node_under_1, combined_node_under_1.size(0) // self.n_vars, combined_node_under_1_degree, combined_node_under_2, combined_node_under_2.size(0) // self.n_vars, combined_node_under_2_degree)
             ### get node_under's degree
             node_under_degree = torch.max(combined_node_under_1_degree, combined_node_under_2_degree)
+            ## delete combined_node_under_1 and combined_node_under_1_degree
+            del combined_node_under_1
+            del combined_node_under_1_degree
+            ## delete combined_node_under_2 and combined_node_under_2_degree
+            del combined_node_under_2
+            del combined_node_under_2_degree
             ### add the bias to node_under
             node_under = add_with_constant(self.n_vars, node_under, self.layer_biases[i])
 
@@ -234,15 +240,21 @@ class LayerModule(torch.nn.Module):
             node_over = sum_2_polys(self.n_vars, combined_node_over_1, combined_node_over_1.size(0) // self.n_vars, combined_node_over_1_degree, combined_node_over_2, combined_node_over_2.size(0) // self.n_vars, combined_node_over_2_degree)
             ### get node_over's degree
             node_over_degree = torch.max(combined_node_over_1_degree, combined_node_over_2_degree)
+            ## delete combined_node_over_1 and combined_node_over_1_degree
+            del combined_node_over_1
+            del combined_node_over_1_degree
+            ## delete combined_node_over_2 and combined_node_over_2_degree
+            del combined_node_over_2
+            del combined_node_over_2_degree
             ### add the bias to node_over
             node_over = add_with_constant(self.n_vars, node_over, self.layer_biases[i])
 
             ### get node 's lower and upper outputs node_output_under node_output_over
             # print(node_under)
             # print(node_over)
-            print('nodebeforenodebeforenodebeforenodebeforenodebeforenodebeforenodebeforenodebeforenodebeforenodebeforenodebeforenodebeforenodebeforenodebeforenodebefore')
-            print('node_under_size ', node_under.size())
-            print('node_over_size ', node_over.size())
+            # print('nodebeforenodebeforenodebeforenodebeforenodebeforenodebeforenodebeforenodebeforenodebeforenodebeforenodebeforenodebeforenodebeforenodebeforenodebefore')
+            # print('node_under_size ', node_under.size())
+            # print('node_over_size ', node_over.size())
             if activation == 'relu':
                 node_output_under, node_output_over, node_output_under_degree, node_output_over_degree = self.node(node_under, node_over, node_under_degree, node_over_degree)
             else:
@@ -250,6 +262,11 @@ class LayerModule(torch.nn.Module):
                 node_output_over = node_over
                 node_output_under_degree = node_under_degree
                 node_output_over_degree = node_over_degree
+
+            del node_under
+            del node_over
+            del node_under_degree
+            del node_over_degree
             # print('nodeafternodeafternodeafternodeafternodeafternodeafternodeafternodeafternodeafternodeafternodeafternodeafternodeafternodeafternodeafternodeafternodeafter')
             # print('node_output_under_size ', node_output_under.size())
             # print('node_output_over_size ', node_output_over.size())
@@ -258,8 +275,16 @@ class LayerModule(torch.nn.Module):
             results_over.append(node_output_over)
             results_under_degrees.append(node_output_under_degree)
             results_over_degrees.append(node_output_over_degree)
-
-            ### return the results in results_under and results_over and their degrees
+            del node_output_under
+            del node_output_over
+            del node_output_under_degree
+            del node_output_over_degree
+        
+        del layer_inputs_over
+        del layer_inputs_over_degrees
+        del layer_inputs_under
+        del layer_inputs_under_degrees
+        ### return the results in results_under and results_over and their degrees
         return results_under, results_over, torch.stack(results_under_degrees), torch.stack(results_over_degrees)
 
 
@@ -282,6 +307,7 @@ class NetworkModule(torch.nn.Module):
 
     def __init__(self, n_vars, network_weights, network_biases, network_size):
         super().__init__()
+        self.n_vars = n_vars
         self.layers = [LayerModule(n_vars, network_weights[i], network_biases[i], network_size[i + 1]) for i in range(len(network_size) - 1) ]
 
 
@@ -290,8 +316,8 @@ class NetworkModule(torch.nn.Module):
         inputs_under = inputs
         inputs_over = inputs
         ### inputs_under_degrees = inputs_over_degrees = torch.diag(n_vars)
-        inputs_under_degrees = torch.ones(n_vars, n_vars)
-        inputs_over_degrees = torch.ones(n_vars, n_vars)
+        inputs_under_degrees = torch.ones(self.n_vars, self.n_vars)
+        inputs_over_degrees = torch.ones(self.n_vars, self.n_vars)
         i = 0
         for layer in self.layers:
             print('################################################# layer number ', i, ' #################################################')
@@ -362,16 +388,14 @@ if __name__ == "__main__":
     # print(res_under)
     
 
-    ### 5) tes NetworkModule() class
+    ### 5) test NetworkModule() class
 
-    n_vars = 3
+    n_vars = 10
     intervals = [[-1, 1] for i in range(n_vars)]
     intervals = torch.tensor(intervals, dtype = torch.float32)
     inputs = generate_inputs(n_vars, intervals, device = 'cuda')
     # print(inputs)
-    ### convert inputs to a sparse representation
-    # inputs = inputs.to_sparse()
-    network_size = [n_vars, 4, 4, 4,  1]
+    network_size =  [n_vars, 50, 50,  1]
     network_weights = []
     network_biases = []
 

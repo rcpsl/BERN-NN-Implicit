@@ -94,7 +94,6 @@ print(minmax)
 assert minmax[0] == M - 2 
 assert minmax[1] == M
 
-<<<<<<< HEAD
 
 # 3597084 // 4 terms, 4 variables, 5 powers
 M = 5000000
@@ -106,5 +105,4 @@ minmax = ibf_minmax_cpp.ibf_minmax(poly)
 print(minmax)
 assert minmax[0] == M - 2 
 assert minmax[1] == M
-=======
->>>>>>> More changes
+
