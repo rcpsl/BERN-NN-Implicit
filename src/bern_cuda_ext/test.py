@@ -5,29 +5,26 @@ nvars = 3
 max_degree = 2
 
 # # This example is from the slide deck
-# poly = torch.tensor([
-#     [
-#         [4, 6, 9],
-#         [1, 2, 0],
-#     ],
-#     [
-#         [2, 2.5, 3],
-#         [1, 2,   0]
-#     ]
-# ]).float().cuda()
+poly = torch.tensor([
+     [
+         [4, 6, 9],
+         [1, 2, 0],
+     ],
+     [
+         [2, 2.5, 3],
+         [1, 2,   0]
+     ]
+]).float().cuda()
 
 
-<<<<<<< HEAD
-minmax = ibf_minmax_cpp.ibf_minmax(poly)
-print(minmax)
+#minmax = ibf_minmax_cpp.ibf_minmax(poly)
+#print(minmax)
 #assert minmax[0] == 0  # 0 * n + 0 * n
 #assert minmax[1] == 24 # 9 * 2 + 3 * 2
-=======
 # minmax = ibf_minmax_cpp.ibf_minmax(poly)
 # print(minmax)
 # assert minmax[0] == 0  # 0 * n + 0 * n
 # assert minmax[1] == 24 # 9 * 2 + 3 * 2
->>>>>>> More changes
 
 # poly = torch.tensor([
 #     [
@@ -84,16 +81,15 @@ print(minmax)
 # assert minmax[1] == M
 
 # 3597084 // 4 terms, 4 variables, 5 powers
-M = 21289
-N = 10
-P = 5
+M = 500000
+N = 7
+P = 3
 poly = torch.ones(M, N, P).cuda().float()
 poly[-1,-1,-1] = -1
 minmax = ibf_minmax_cpp.ibf_minmax(poly)
 print(minmax)
 assert minmax[0] == M - 2 
 assert minmax[1] == M
-
 
 # 3597084 // 4 terms, 4 variables, 5 powers
 M = 5000000
@@ -105,4 +101,3 @@ minmax = ibf_minmax_cpp.ibf_minmax(poly)
 print(minmax)
 assert minmax[0] == M - 2 
 assert minmax[1] == M
-
