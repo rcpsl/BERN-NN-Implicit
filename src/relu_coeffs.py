@@ -21,7 +21,7 @@ class relu_monom_coeffs():
     def get_monom_coeffs_over(self, interval):
 
     
-        if (interval[0] == interval[1]) and (interval[0] == 0):
+        if (interval[0] == interval[1]) and (interval[0] == 0.0):
 
             coeffs = torch.tensor([0., 0., 0.])
 
@@ -29,7 +29,7 @@ class relu_monom_coeffs():
 
             U = torch.tensor([[1., 0., 0.], [-2., 2., 0.], [1., -2., 1.]])
             V = torch.diag(torch.tensor([1., 1 / (interval[1] - interval[0]), 1 / (interval[1] - interval[0]) ** 2]))
-            W = torch.tensor([[1., (-1) * interval[0], interval[0] ** 2], [0, 1., 2 * interval[0]], [0., 0., 1.]])
+            W = torch.tensor([[1., (-1) * interval[0], interval[0] ** 2], [0, 1., (-1) * 2 * interval[0]], [0., 0., 1.]])
 
             
             bern_coeffs = torch.tensor([[torch.relu(interval[0])], [torch.relu(0.5 * (interval[0] + interval[1]))], [torch.relu(interval[1])]])
@@ -38,6 +38,14 @@ class relu_monom_coeffs():
             coeffs = torch.matmul(W, coeffs)
 
             coeffs = coeffs.reshape(-1)
+            ### switch the places of coeffs[0] and coeffs[2] to get the coeffs in the right order
+            # print('coeffsbeforebeforebeforebeforebeforebeforebeforebeforebeforebeforevbeforebeforebefore', coeffs)
+            coeffs = coeffs.flip(dims=[0])
+            # print('coeffsafteraftervafterafterafterafterafterafterafterafterafterafterafterafterafterafter', coeffs)
+
+
+            # coeffs = torch.tensor([0., interval[1] / (interval[1] - interval[0]), - (interval[1] * interval[0]) / (interval[1] - interval[0])])
+            # coeffs = torch.tensor([1., 0., 0.])
 
         return coeffs
 
@@ -54,12 +62,13 @@ class relu_monom_coeffs():
         if (interval[0] == interval[1]) and (interval[0] == 0):
 
             coeffs = torch.tensor([0., 0., 0.])
+            return coeffs
 
         else:
             
             f1 = 0.
-            f2 = (2 * interval[1] ** 2 - interval[1] * interval[0] - interval[0] ** 2) / 6
-            f3 = (interval[1] ** 2 - interval[0] ** 2) / 2
+            f2 = (2 * interval[1] ** 2 - interval[1] * interval[0] - interval[0] ** 2) / 6.0
+            f3 = (interval[1] ** 2 - interval[0] ** 2) / 2.0
 
             if max(f1, f2, f3) == f1:
                 return torch.tensor([0., 0., 0.])
@@ -69,6 +78,8 @@ class relu_monom_coeffs():
 
             else:
                 return torch.tensor([0., 1., 0.])
+
+            # return torch.tensor([0., 0., 0.])
 
 
 

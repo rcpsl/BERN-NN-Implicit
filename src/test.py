@@ -184,12 +184,14 @@ import torch
 
 
 ### perform row-wise convolution between T_C_A and T_C_B
-# n = 2
+n = 10
 # T_C_A = torch.tensor([[1.0, 2.0, 8.0, 4.0, 5.],[3.0, 4.0, 7.0, 3.0, 5.]])
 # T_C_B = torch.tensor([[0.5, 0.0, 3.0, 2.0, 5.],[1.0, 0.0, 5.0, 0.0, 5.]])
-# res = [torch.nn.functional.conv1d(T_C_A[i, :].reshape(1, -1).reshape(1, 1, -1),      torch.flip(T_C_B[i, :].reshape(1, -1), dims=(1,)).reshape(1, 1, -1), padding = T_C_B.size(1) - 1   ).flatten()             for i in range(n)]
-# res = torch.stack(res) 
-# print(res)
+T_C_A = torch.randn(n, 5)
+T_C_B = torch.randn(n, 5)
+res1 = [torch.nn.functional.conv1d(T_C_A[i, :].reshape(1, -1).reshape(1, 1, -1),      torch.flip(T_C_B[i, :].reshape(1, -1), dims=(1,)).reshape(1, 1, -1), padding = T_C_B.size(1) - 1   ).flatten()             for i in range(n)]
+res1 = torch.stack(res1) 
+# print(res1)
 
 
 # # Assuming T_C_A and T_C_B are both 2D tensors of shape (n, m)
@@ -207,16 +209,16 @@ import torch
 
 
 # # Assuming T_C_A and T_C_B are both 2D tensors of shape (n, m)
-# n, m = T_C_A.shape
-# # Reshape T_C_A and T_C_B to have an additional channel dimension
-# T_C_A = T_C_A.view((1, n, m))  # Shape: (1, n, m)
-# T_C_B = T_C_B.view((n, 1, m))  # Shape: (n, 1, m)
-# # Flip T_C_B
-# T_C_B_flipped = torch.flip(T_C_B, dims=(2,))  # Shape: (1, n, m)
-# # Perform convolution
-# res = torch.nn.functional.conv1d(T_C_A, T_C_B_flipped, padding  = m - 1, groups= n).flatten(1)  # Shape: (n, m)
-# res = res.reshape(-1, 2 * m - 1)
-# print(res)
+n, m = T_C_A.shape
+# Reshape T_C_A and T_C_B to have an additional channel dimension
+T_C_A = T_C_A.view((1, n, m))  # Shape: (1, n, m)
+T_C_B = T_C_B.view((n, 1, m))  # Shape: (n, 1, m)
+# Flip T_C_B
+T_C_B_flipped = torch.flip(T_C_B, dims=(2,))  # Shape: (1, n, m)
+# Perform convolution
+res2 = torch.nn.functional.conv1d(T_C_A, T_C_B_flipped, padding  = m - 1, groups= n).flatten(1)  # Shape: (n, m)
+res2 = res2.reshape(-1, 2 * m - 1)
+print(torch.max(torch.abs(res1 - res2)))
 
 
 
@@ -533,23 +535,23 @@ import time
 
 
 
-def modify_tensor(TA, tA, n_vars):
-    TA_mod2 = [TA[i * n_vars:].clone() for i in  range(tA)]
-    for i in range(len(TA_mod2)):
-        chunk = TA_mod2[i]
-        chunk[torch.arange(n_vars, chunk.size(0), n_vars)] *= 2
+# def modify_tensor(TA, tA, n_vars):
+#     TA_mod2 = [TA[i * n_vars:].clone() for i in  range(tA)]
+#     for i in range(len(TA_mod2)):
+#         chunk = TA_mod2[i]
+#         chunk[torch.arange(n_vars, chunk.size(0), n_vars)] *= 2
 
-    TA_mod2 = torch.cat(TA_mod2, dim=0)
-    return TA_mod2 
+#     TA_mod2 = torch.cat(TA_mod2, dim=0)
+#     return TA_mod2 
 
 
 
-# Test the function with your parameters
-torch.set_default_tensor_type('torch.cuda.FloatTensor')
-n = 3
-pA = torch.tensor([[1, 1, 1] for _ in range(n)])
-tA = 4
-pA = pA.repeat(tA, 1)
-# print(pA)
-res = modify_tensor(pA, tA, n)
-print(res)
+# # Test the function with your parameters
+# torch.set_default_tensor_type('torch.cuda.FloatTensor')
+# n = 3
+# pA = torch.tensor([[1, 1, 1] for _ in range(n)])
+# tA = 4
+# pA = pA.repeat(tA, 1)
+# # print(pA)
+# res = modify_tensor(pA, tA, n)
+# print(res)

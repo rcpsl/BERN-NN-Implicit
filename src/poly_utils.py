@@ -62,11 +62,11 @@ def split_and_select(pA, tA, I):
 ### tA: number of terms in pA
 ### degree_A: degree of pA
 ###################################################
-def add_with_constant(n, pA, c):
+def add_with_constant(n, pA, const):
     ### replace the non-zero elements for the first n rows of pA with 1s
-    c_tensor = torch.where(pA[0 : n, :] != 0, 1, 0)
-    ### multiply the first row of c_tensor with c
-    c_tensor[0, :] = c_tensor[0, :] * c
+    c_tensor = torch.where(pA[0 : n, :] != 0.0, 1.0, 0.0)
+    ### multiply the first row of c_tensor with const
+    c_tensor[0, :] *= const
     ### concatenate c_tensor below pA along the rows
     return torch.cat((pA, c_tensor), 0)
 
@@ -80,20 +80,42 @@ def add_with_constant(n, pA, c):
 ### tA: number of terms in pA
 ### degree_A: degree of pA
 ###################################################
-def mult_with_constant(n, pA, tA, degree_A, c):
+def mult_with_constant(n, pA, c):
+    """
+    Multiplies every row of the tensor by 'c', skipping 'n' rows in between each multiplication.
+    
+    Parameters:
+        tensor (torch.Tensor): The input 2D tensor.
+        c (float): The constant to multiply.
+        n (int): The number of rows to skip.
 
-    result = pA.clone()  # Create a copy to avoid modifying the original tensor
-    
-    # Get the number of rows in result
-    num_rows = result.size(0)
-    
-    # Create a mask to select every nth row
-    mask = torch.arange(num_rows) % n == 0
-    
-    # Multiply selected rows with c
-    result[mask] *= c
+    Returns:
+        torch.Tensor: The resulting tensor after the operation.
+    """
+    # Ensure the input is a 2D tensor
+    assert pA.dim() == 2, "Input needs to be a 2D tensor"
+
+    # Step 1: Create a multiplier tensor
+
+    # Number of rows in the original tensor
+    num_rows = pA.shape[0]
+
+    # Create a vector with 'c' at positions where rows need to be multiplied, and '1' elsewhere
+    # 'floor_divide' calculates the integer division; positions to be multiplied are those where (index // n) is even
+    multiplier = torch.where(torch.arange(num_rows) % n == 0, c * torch.ones(num_rows), torch.ones(num_rows))
+
+    # Ensure it's the correct shape for broadcasting
+    multiplier = multiplier.view(-1, 1)
+
+    # Step 2: Multiply
+
+    # Element-wise multiplication; thanks to broadcasting, 'multiplier' is virtually expanded to match 'tensor's shape
+    result = pA * multiplier
 
     return result
+
+
+
 
 
 
@@ -142,7 +164,7 @@ def degree_elevation(pA, n, tA, degree, new_degree):
     # print('result', result)
     # print('C_new_degree', C_new_degree)
     ### perform row-wise division between res_conv and C_new_degree for non-zero elements of C_new_degree
-    result =  torch.where(C_new_degree != 0, torch.div(result, C_new_degree), 0)
+    result =  torch.where(C_new_degree != 0, torch.div(result, C_new_degree), 0.0)
     
     ### pad result tensor with 0 columns of number max(new_degree) - max(degree) 
     pA_elevated = torch.nn.functional.pad(pA, (0, torch.max(l_diff).int().item()))
@@ -159,30 +181,34 @@ def degree_elevation(pA, n, tA, degree, new_degree):
         pA_elevated = result
     else:
         pA_elevated[idx_list, :] = result
-
+    
+    # ### remove zero rows from pA_elevated
+    # pA_elevated = remove_zero_rows(pA_elevated)
     return pA_elevated
 
 
-# ###################################################
-# ### performs summation between 2 2D tensor
-# ###  polynomials pA and pB of same degrees.
-# ### n: number of variables
-# ### tA: number of terms in pA
-# ### tB: number of terms in pB
-# ###################################################
-def sum_2_polys_same_degree(n, pA, tA, pB, tB):
+
+
+# # ###################################################
+# # ### performs summation between 2 2D tensor
+# # ###  polynomials pA and pB of same degrees.
+# # ### n: number of variables
+# # ### tA: number of terms in pA
+# # ### tB: number of terms in pB
+# # ###################################################
+# def sum_2_polys_same_degree(n, pA, tA, pB, tB):
     
 
-    # ### if pA.size() == pB.size() then sum every n rows of pA and pB
-    # if pA.size() == pB.size():
+#     # ### if pA.size() == pB.size() then sum every n rows of pA and pB
+#     # if pA.size() == pB.size():
         
-    ### sum only the first n rows of pA and pB if pA and pB are the same execpt for the first n rows
-    res = [torch.cat(((pA[i * n , :] + pB[j * n, :]).unsqueeze(0), pA[i * n + 1 : (i + 1) * n, :])) for j in range(tB)   for i in range(tA) if torch.equal(pA[i * n + 1 : (i + 1) * n, :], pB[j * n + 1 : (j + 1) * n, :])]
-    ### concatenate res along the rows and return it
-    # print('res', res)
-    if len(res) == 0:
-        return torch.cat((pA, pB), 0)
-    return torch.cat(res, dim=0)
+#     ### sum only the first n rows of pA and pB if pA and pB are the same execpt for the first n rows
+#     res = [torch.cat(((pA[i * n , :] + pB[j * n, :]).unsqueeze(0), pA[i * n + 1 : (i + 1) * n, :])) for j in range(tB)   for i in range(tA) if torch.equal(pA[i * n + 1 : (i + 1) * n, :], pB[j * n + 1 : (j + 1) * n, :])]
+#     ### concatenate res along the rows and return it
+#     # print('res', res)
+#     if len(res) == 0:
+#         return torch.cat((pA, pB), 0)
+#     return torch.cat(res, dim=0)
 
 
 def sum_2_polys_same_degree(n, T1, T2):
@@ -231,6 +257,8 @@ def sum_2_polys_same_degree(n, T1, T2):
 ###################################################    
 
 def sum_2_polys(n, pA, tA, degree_A, pB, tB, degree_B):
+    # print('degree_A_beforedegree_A_beforedegree_A_beforedegree_A_beforedegree_A_before', degree_A)
+    # print('degree_B_beforedegree_B_beforedegree_B_beforedegree_B_beforedegree_B_before', degree_B)
     
     ### if degree_A is all zeros then return pB
     if torch.all(degree_A == 0):
@@ -247,9 +275,13 @@ def sum_2_polys(n, pA, tA, degree_A, pB, tB, degree_B):
         # print('pB[0:6, :]', pB[0:6, :])
         # print('pA.size()', pA.size())
         # print('pB.size()', pB.size())
-        # return torch.cat((pA, pB), 0)
+        # print('pA', pA)
+        # print('pB', pB)
+        # print('degree_A', degree_A)
+        # print('degree_B', degree_B)
+        return torch.cat((pA, pB), 0)
         # return sum_2_polys_same_degree(n, pA, tA, pB, tB)
-        return sum_2_polys_same_degree(n, pA, pB)
+        # return sum_2_polys_same_degree(n, pA, pB)
 
 
     ### degree elevate pA concatenate it with pB
@@ -305,7 +337,7 @@ def mult_2_terms(n, TA, C_A, TB, C_B, C_AmulB):
     res = res[torch.arange(0, res.size(0), step = n + 1)]
     
     ### perform row-wise division between res and C_AmulB for non-zero elements of C_AmulB
-    res =  torch.where(C_AmulB != 0, torch.div(res, C_AmulB), torch.tensor(0.))
+    res =  torch.where(C_AmulB != 0, torch.div(res, C_AmulB), 0.0)
 
     return res
 
@@ -417,25 +449,40 @@ def poly_pow_2(n_vars, TA, tA, degree_A):
 ###################################################
 def quad_of_poly(n, pA, tA, degree_A, coeffs):
 
-    ### compute pA ** 2
+    
     # print(pA)
     # print(degree_A)
     # print(tA)
     # print(pA.size(0) // n)
     # res = mult_2_polys(n, pA, tA, degree_A,  pA, tA, degree_A)
-    res = poly_pow_2(n, pA, tA, degree_A)
-    ### compute a * pA ** 2 
-    term1 = mult_with_constant(n, res, tA, degree_A, coeffs[0])
-    ### compute b * pA 
-    term2 = mult_with_constant(n, pA, tA, degree_A, coeffs[1])
-    ### sum term1 + term2: a * pA ** 2 + b * pA 
-    t_term1 = term1.size(0) // n
-    degree_term1 = 2 * degree_A
-    term = sum_2_polys(n, term1, t_term1, degree_term1, term2, tA, degree_A)
+
+    if torch.abs(coeffs[0]) != 0.0:
+        ### compute pA ** 2
+        res = poly_pow_2(n, pA, tA, degree_A)
+        ### compute a * pA ** 2 
+        term1 = mult_with_constant(n, res, coeffs[0])
+        ### compute b * pA 
+        term2 = mult_with_constant(n, pA, coeffs[1])
+        ### sum term1 + term2: a * pA ** 2 + b * pA 
+        t_term1 = term1.size(0) // n
+        degree_term1 = 2 * degree_A
+        term = sum_2_polys(n, term1, t_term1, degree_term1, term2, tA, degree_A)
+    else:
+        ### compute b * pA 
+        # print('coeffs[1]', coeffs[1])
+        # print('pApApApApApApApApApApApApApApApApApApApApApApApApApApApA', pA)
+        term = mult_with_constant(n, pA, coeffs[1])
+        # print('termtermtermtermtermtermtermtermtermtermtermtermtermterm', term)
+
     ### sum term + c if c != 0; a * pA ** 2 + b * pA + c
-    # if coeffs[2] != 0.0:
-    #     res = add_with_constant(n, term, coeffs[2])
-    return res
+    if torch.abs(coeffs[2]) != 0.0:
+        # print('coeffs[2]', coeffs[2])
+        # print('final_term', add_with_constant(n, term, coeffs[2]))
+        return add_with_constant(n, term, coeffs[2])
+    else:
+        return term
+    # print('coeffs[2]', coeffs[2])
+    # return add_with_constant(n, pA, coeffs[2])
 
 
 
@@ -506,6 +553,11 @@ def quad_of_poly(n, pA, tA, degree_A, coeffs):
     # coeffs = torch.tensor([1, 2, 3])
     # res = quad_of_poly(n, pA, tA, degree_A, coeffs)
     # print(res)
+
+
+
+
+
 
     
 

@@ -279,18 +279,18 @@ class relu_monom_coeffs():
 
 
                 coeffs_over = self.get_monom_coeffs_over(interval)
-                coeffs_under = self.get_monom_coeffs_under(interval)
+                # coeffs_under = self.get_monom_coeffs_under(interval)
                 
-                # if abs(interval[0]) == interval[1]:
-                #     coeffs_under = self.get_monom_coeffs_under(interval)
+                if abs(interval[0]) == interval[1]:
+                    coeffs_under = self.get_monom_coeffs_under(interval)
 
-                # if (interval[1] > abs(interval[0])):
-                #     #coeffs_under = self.get_monom_coeffs_under(interval)
-                #     coeffs_under = [0.0, 1.0] + [0.0] * ((self.order + 1) - 2)
-                #     coeffs_under = torch.tensor(coeffs_under)
-                # if (interval[1] < abs(interval[0])):    
-                #     coeffs_under = [0.0] * (self.order + 1)
-                #     coeffs_under = torch.tensor(coeffs_under)
+                if (interval[1] > abs(interval[0])):
+                    #coeffs_under = self.get_monom_coeffs_under(interval)
+                    coeffs_under = [0.0, 1.0] + [0.0] * ((self.order + 1) - 2)
+                    coeffs_under = torch.tensor(coeffs_under)
+                if (interval[1] < abs(interval[0])):    
+                    coeffs_under = [0.0] * (self.order + 1)
+                    coeffs_under = torch.tensor(coeffs_under)
 
                 # print('intervalintervalintervalintervalintervalintervalintervalintervalintervalintervalintervalinterval', interval)
                 coeffs_layer_over.append(coeffs_over)

@@ -318,7 +318,7 @@ class PowerModule(torch.nn.Module):
 
 
     def forward( self, inputs ):
-        inputs = inputs.to('cuda')
+        # inputs = inputs.to('cuda')
         if self.power == 0:
             shp = self.dims * [1]
             power_result = torch.ones(shp)
@@ -444,7 +444,7 @@ class LayerModule(torch.nn.Module):
     Module that represent a fully connected layer. Is composed of multiple nodes and will return a list of 
     outputs
     """
-    def __init__( self, dims, degree, weights, biases, size, order, gpus):
+    def __init__( self, dims, degree, weights, biases, size, order, activation, gpus):
         """
         coefficients: list-like; list of coefficients for composing polynomial, size will be degree + 1
         degree: int, degree of the input polynomial + 1
@@ -462,6 +462,7 @@ class LayerModule(torch.nn.Module):
         self._weights_neg = -torch.nn.functional.relu((-1) * self._weights)
         self.size = size
         self.order = order
+        self.activation = activation
         self.gpus = gpus
 
 
@@ -493,6 +494,9 @@ class LayerModule(torch.nn.Module):
             #combined_under = sum_module(combined_under_1, combined_under_2)
             combined_under = combined_under_1 + combined_under_2 + self.biases[i]
             combined_under_list.append(combined_under)
+
+            ### print the bounds
+            # print('l, u ', torch.min(combined_under), torch.max(combined_over))
         
         
         self.bern_coefficients_over = combined_over_list
@@ -515,11 +519,18 @@ class LayerModule(torch.nn.Module):
            
         results_under = []
         results_over = []
-        for node in self.nodes:
-            res_under, res_over = node( inputs_under, inputs_over)
-            results_under.append(res_under)
-            results_over.append(res_over)
-        return torch.stack(results_under), torch.stack(results_over)
+        if self.activation == 'relu':
+            for node in self.nodes:
+                res_under, res_over = node( inputs_under, inputs_over)
+                results_under.append(res_under)
+                results_over.append(res_over)
+            return torch.stack(results_under), torch.stack(results_over)
+        else:
+            for i in range(self.size):
+                results_under.append(self.bern_coefficients_under[i])
+                results_over.append(self.bern_coefficients_over[i])
+            return torch.stack(results_under), torch.stack(results_over)
+            #return results_under, results_over 
         #return results_under, results_over
 
 
@@ -556,10 +567,15 @@ class NetworkModule(torch.nn.Module):
         
 
         for i in range(1, self.num_layers + 1):
-            print(i)
+            print('################################################# layer number ', i - 1, ' #################################################')
             sizes = torch.tensor(self.inputs_over[0].shape)
             degree = sizes - 1
-            layer_module = LayerModule( self.dims, degree, self.layer_weights[i - 1], self.layer_biases[i - 1],  self.sizes[i], self.order, self.gpus)    
+            if i == self.num_layers:
+                activation = 'linear'
+                layer_module = LayerModule( self.dims, degree, self.layer_weights[i - 1], self.layer_biases[i - 1],  self.sizes[i], self.order, activation, self.gpus)    
+            else:
+                activation = 'relu'
+                layer_module = LayerModule( self.dims, degree, self.layer_weights[i - 1], self.layer_biases[i - 1],  self.sizes[i], self.order, activation, self.gpus)
             
             self.inputs_under, self.inputs_over  = layer_module(self.inputs_under, self.inputs_over)
             #print("INPUTS", self.inputs_under.shape)

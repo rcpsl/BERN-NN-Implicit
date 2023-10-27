@@ -44,28 +44,38 @@ def generate_inputs(n_vars, intervals, device = 'cuda'):
 ### inputs
 ###################################################
 def ibf_tensor_prod_input_weights(n_vars, inputs_degrees, inputs, weights):
-    
+    # print('weightsweightsweightsweightsweightsweights', weights)
+    # print('inputinputinputinputinputinputinputinputinputinputin', inputs)
+    # print('inputs_degreesinputs_degreesinputs_degreesinputs_degreesinputs_degrees', inputs_degrees)
     ### if all the weights are zeros then node_input = torch.zeros(n_vars, 1) and degree_node_input = torch.zeros(n_vars)
-    if torch.all(weights == 0):
+    if torch.all(torch.abs(weights) == 0):
+        degree_node_input = torch.zeros(n_vars, 1)
         return torch.zeros(n_vars, 1), torch.zeros(n_vars)
 
  
     ### multiply the first input with the first weight if both are not zero
-    if torch.all(inputs[0] == 0) or torch.all(weights[0] == 0):
-        node_input = torch.zeros(n_vars, 1)
+    if torch.all(torch.abs(inputs[0]) == 0) or torch.all(torch.abs(weights[0]) == 0):
+        # print('weights[0] ', weights[0])
+        # print('kakakakakakakakakakakakakakakakakak')
         degree_node_input = torch.zeros(n_vars)
+        node_input = torch.zeros(n_vars, 1)
     else:
+        # print('sasasasasasasasasasasasasasasasasasasasasas')
+        # print('weights[0] ', weights[0])
         ### get the degree of the node_input
-        degree_node_input = inputs_degrees[0, :]
-        node_input = mult_with_constant(n_vars, inputs[0], inputs[0].size(0) // n_vars, degree_node_input, weights[0])
+        degree_node_input = inputs_degrees[0, :]   
+        node_input = mult_with_constant(n_vars, inputs[0], weights[0])
     for i in range(1, len(inputs)):
-        ### multiply each ith input with the ith weight if both are not zero
-        if torch.all(inputs[i] == 0) or torch.all(weights[i] == 0):
-            continue
-        ### multiply the ith input with the ith weight
-        else:
-            ith_input_weight = mult_with_constant(n_vars, inputs[i], inputs[i].size(0) // n_vars, inputs_degrees[i, :], weights[i])
-            ### add the ith input to the node_input
+        if torch.all(torch.abs(weights[i]) != 0):
+            # print('iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii', i)
+            # print('weights[i] ', weights[i])
+            # ### multiply each ith input with the ith weight if both are not zero
+            # if torch.all(inputs[i] == 0) or torch.all(weights[i] == 0):
+            #     continue
+            # ### multiply the ith input with the ith weight
+            # else:
+            ith_input_weight = mult_with_constant(n_vars, inputs[i], weights[i])
+            ### add the ith input to the node_input                                      (n, pA, tA, degree_A, pB, tB, degree_B)
             # print('degree_node_input ', degree_node_input)
             # print('inputs_degrees[i, :] ', inputs_degrees[i, :])
             # print('node_input ', node_input)
@@ -100,63 +110,76 @@ class NodeModule(torch.nn.Module):
 
     def forward(self, layer_inputs_under, layer_inputs_over, layer_inputs_under_degrees, layer_inputs_over_degrees):
 
+            
+        ### for each node in the layer: propagate layer_inputs_under and layer_inputs_over through the node's weights and pass them through the node
+        ### get node 's lower input node_under 
+        # print('layer_inputs_under ', layer_inputs_under)
+        # print('layer_inputs_over ', layer_inputs_over)
+        # print('layer_inputs_over_degrees ', layer_inputs_over_degrees)
+        combined_node_under_1, combined_node_under_1_degree = ibf_tensor_prod_input_weights(self.n_vars, layer_inputs_over_degrees, layer_inputs_over, self.node_neg_weights)
+        # print('kabakabakabakabakabakabakabakabakabakabakabakabakabakabakabakabakabakabakabakabakabakaba')
+        combined_node_under_2, combined_node_under_2_degree = ibf_tensor_prod_input_weights(self.n_vars, layer_inputs_under_degrees, layer_inputs_under, self.node_pos_weights)
+
+        ### sum the two tensors combined_node_under_1 and combined_node_under_2
+        input_under = sum_2_polys(self.n_vars, combined_node_under_1, combined_node_under_1.size(0) // self.n_vars, combined_node_under_1_degree, combined_node_under_2, combined_node_under_2.size(0) // self.n_vars, combined_node_under_2_degree)
+        ### get input_under's degree
+        # print('combined_node_under_1_degree ', combined_node_under_1_degree)
+        # print('combined_node_under_2_degree ', combined_node_under_2_degree)
+        input_under_degree = torch.max(combined_node_under_1_degree, combined_node_under_2_degree)
+        # print('input_under_degree ', input_under_degree)
+        ## delete combined_node_under_1 and combined_node_under_1_degree
+        del combined_node_under_1
+        del combined_node_under_1_degree
+        ## delete combined_node_under_2 and combined_node_under_2_degree
+        del combined_node_under_2
+        del combined_node_under_2_degree
+        ### add the bias to input_under
+        input_under = add_with_constant(self.n_vars, input_under, self.node_bias)
+
+        ### get node 's upper input input_over
+        combined_node_over_1, combined_node_over_1_degree = ibf_tensor_prod_input_weights(self.n_vars, layer_inputs_over_degrees, layer_inputs_over, self.node_pos_weights)
+        combined_node_over_2, combined_node_over_2_degree = ibf_tensor_prod_input_weights(self.n_vars, layer_inputs_under_degrees, layer_inputs_under, self.node_neg_weights)
+        # print('combined_node_over_1 ', combined_node_over_1)
+        # print('combined_node_over_2 ', combined_node_over_2)
+        ### sum the two tensors combined_node_over_1 and combined_node_over_2
+        input_over = sum_2_polys(self.n_vars, combined_node_over_1, combined_node_over_1.size(0) // self.n_vars, combined_node_over_1_degree, combined_node_over_2, combined_node_over_2.size(0) // self.n_vars, combined_node_over_2_degree)
+        # print('input_over ', input_over)
+        ### get input_over's degree
+        # print('combined_node_over_1_degree ', combined_node_over_1_degree)
+        # print('combined_node_over_2_degree ', combined_node_over_2_degree)
+        input_over_degree = torch.max(combined_node_over_1_degree, combined_node_over_2_degree)
+        # print('input_over_degree ', input_over_degree)
+        ## delete combined_node_over_1 and combined_node_over_1_degree
+        del combined_node_over_1
+        del combined_node_over_1_degree
+        ## delete combined_node_over_2 and combined_node_over_2_degree
+        del combined_node_over_2
+        del combined_node_over_2_degree
+        ### add the bias to node_over
+        input_over = add_with_constant(self.n_vars, input_over, self.node_bias)
+
+        # print('input_under ', input_under)
+        # print('input_over ', input_over)
+
+        # print('activation ', self.activation)
+
+        if self.activation == 'linear':
+            return input_under, input_over, input_under_degree, input_over_degree
+
         if self.activation == 'relu':
             
-            ### for each node in the layer: propagate layer_inputs_under and layer_inputs_over through the node's weights and pass them through the node
-            ### get node 's lower input node_under 
-            print('layer_inputs_over ', layer_inputs_over)
-            print('layer_inputs_over_degrees ', layer_inputs_over_degrees)
-            combined_node_under_1, combined_node_under_1_degree = ibf_tensor_prod_input_weights(self.n_vars, layer_inputs_over_degrees, layer_inputs_over, self.node_neg_weights)
-            combined_node_under_2, combined_node_under_2_degree = ibf_tensor_prod_input_weights(self.n_vars, layer_inputs_under_degrees, layer_inputs_under, self.node_pos_weights)
-
-            ### sum the two tensors combined_node_under_1 and combined_node_under_2
-            input_under = sum_2_polys(self.n_vars, combined_node_under_1, combined_node_under_1.size(0) // self.n_vars, combined_node_under_1_degree, combined_node_under_2, combined_node_under_2.size(0) // self.n_vars, combined_node_under_2_degree)
-            ### get input_under's degree
-            input_under_degree = torch.max(combined_node_under_1_degree, combined_node_under_2_degree)
-            ## delete combined_node_under_1 and combined_node_under_1_degree
-            del combined_node_under_1
-            del combined_node_under_1_degree
-            ## delete combined_node_under_2 and combined_node_under_2_degree
-            del combined_node_under_2
-            del combined_node_under_2_degree
-            ### add the bias to input_under
-            input_under = add_with_constant(self.n_vars, input_under, self.node_bias)
-
-            ### get node 's upper input input_over
-            combined_node_over_1, combined_node_over_1_degree = ibf_tensor_prod_input_weights(self.n_vars, layer_inputs_over_degrees, layer_inputs_over, self.node_pos_weights)
-            combined_node_over_2, combined_node_over_2_degree = ibf_tensor_prod_input_weights(self.n_vars, layer_inputs_under_degrees, layer_inputs_under, self.node_neg_weights)
-            ### sum the two tensors combined_node_over_1 and combined_node_over_2
-            input_over = sum_2_polys(self.n_vars, combined_node_over_1, combined_node_over_1.size(0) // self.n_vars, combined_node_over_1_degree, combined_node_over_2, combined_node_over_2.size(0) // self.n_vars, combined_node_over_2_degree)
-            ### get input_over's degree
-            input_over_degree = torch.max(combined_node_over_1_degree, combined_node_over_2_degree)
-            ## delete combined_node_over_1 and combined_node_over_1_degree
-            del combined_node_over_1
-            del combined_node_over_1_degree
-            ## delete combined_node_over_2 and combined_node_over_2_degree
-            del combined_node_over_2
-            del combined_node_over_2_degree
-            ### add the bias to node_over
-            input_over = add_with_constant(self.n_vars, input_over, self.node_bias)
-            
-
-
-
-
-
-
             input_under = torch.reshape(input_under, (input_under.size(0) // self.n_vars, self.n_vars, input_under.size(1)))
             input_over = torch.reshape(input_over, (input_over.size(0) // self.n_vars, self.n_vars, input_over.size(1)))
             ### get the bounds for the node's relu:  l = min(input_under) and u = max(input_over)
             # print(input_under_clone)
             l = ibf_minmax_cpp.ibf_minmax(input_under)[0]
             u = ibf_minmax_cpp.ibf_minmax(input_over)[1]
-
-
             input_under = torch.reshape(input_under, (input_under.size(0) * self.n_vars, input_under.size(2)))
             input_over = torch.reshape(input_over, (input_over.size(0) * self.n_vars, input_over.size(2)))
             
 
             # print('l, u ', l, u)
+            
 
             
             
@@ -180,7 +203,8 @@ class NodeModule(torch.nn.Module):
                 ### if relu_coeffs_under is all zeros then make relu_node_under = torch.empty(0) and pass the node's inputs input_over through the node's quadratic polynomials coefficents  relu_coeffs_over
                 if torch.all(relu_coeffs_under == 0):
                     # print('all relu_coeffs_under are zeros')
-                    relu_node_under = torch.tensor([0.])
+                    # relu_node_under = torch.tensor([0.])
+                    relu_node_under = torch.zeros(self.n_vars, 1)
                     ### now keep the same next steps for relu_node_over
                     ### pass the node's inputs input_over through the node's quadratic polynomials coefficents  relu_coeffs_over 
                     # print(input_under)
@@ -216,79 +240,7 @@ class NodeModule(torch.nn.Module):
                     return relu_node_under, relu_node_over, 2 * input_under_degree , 2 * input_over_degree
                 
 
-        else:
-            return layer_inputs_under, layer_inputs_over, layer_inputs_under_degrees, layer_inputs_over_degrees
 
-
-# ###################################################
-# ### class LayerModule() takes as inputs:
-# ### layer_inputs_under and layer_inputs_over and 
-# ### and propagate them through the layer. 
-# ### n_vars: number of variables
-# ### degree: degree for layer_inputs_under and layer_inputs_over
-# ### layer_weights: layer's weights where the ith row
-# ### for the layer_weights corresponds to the weights 
-# ### for the ith node for that layer.
-# ### layer_biases: the biases for the layer
-# ### layer_size: the number of nodes for the layer
-# ###################################################
-# class LayerModule(torch.nn.Module):
-
-#     def __init__(self, n_vars, layer_weights, layer_biases, layer_size, activation):
-#         super().__init__()
-#         self.n_vars = n_vars
-#         self.layer_size = layer_size
-#         ### get the psoitive and negative weights from the layer_weights
-#         self._layer_weights_pos = torch.nn.functional.relu(layer_weights)
-#         self._layer_weights_neg = (-1) * torch.nn.functional.relu((-1) * layer_weights)
-#         self.layer_biases = layer_biases
-#         self.activation = activation
-#         ### call self.nodes objects
-#         self.nodes = [NodeModule(self.n_vars, self._layer_weights_pos[i, :], self._layer_weights_neg[i, :], self.layer_biases[i], self.activation) for i in range(self.layer_size)]
-
-
-#     def forward(self, layer_inputs_under, layer_inputs_over, layer_inputs_under_degrees, layer_inputs_over_degrees):
-
-#         ### for each node in the layer: propagate layer_inputs_under and layer_inputs_over through the node's weights and pass them through the node 
-#         ### TO DO: parallize this operation by batches of nodes
-#         results_under = []
-#         results_over = []
-#         results_under_degrees = []
-#         results_over_degrees = []
-#         # print('layer_size ', self.layer_size)
-#         for node in self.nodes:
-#             # print('########################## node number ', i, ' ##########################')
-#             node_output_under, node_output_over, node_output_under_degree, node_output_over_degree = node(layer_inputs_under, layer_inputs_over, layer_inputs_under_degrees, layer_inputs_over_degrees)
-#             results_under.append(node_output_under)
-#             results_over.append(node_output_over)
-#             results_under_degrees.append(node_output_under_degree)
-#             results_over_degrees.append(node_output_over_degree)
-#             del node_output_under
-#             del node_output_over
-#             del node_output_under_degree
-#             del node_output_over_degree
-        
-#         del layer_inputs_over
-#         del layer_inputs_over_degrees
-#         del layer_inputs_under
-#         del layer_inputs_under_degrees
-#         ### return the results in results_under and results_over and their degrees
-#         return results_under, results_over, torch.stack(results_under_degrees), torch.stack(results_over_degrees)
-
-class NodeModuleList(nn.Module):
-    def __init__(self, nodes):
-        super(NodeModuleList, self).__init__()  # Make sure to call the correct superclass initializer
-        self.module_list = nn.ModuleList(nodes)  # Use a proper ModuleList for storing the nodes.
-
-    def forward(self, inputs_for_nodes):
-        # Your forward method should be correctly recognized now. 
-        # Make sure the inputs are correctly unpacked if they're tuples or lists.
-        results = [node(*input) for node, input in zip(self.module_list, inputs_for_nodes)]
-        return results
-    
-    def __iter__(self):
-        return iter(self.module_list)  # This makes your class iterable, delegating iteration to the internal ModuleList.
-    
 ###################################################
 ### class LayerModule() takes as inputs:
 ### layer_inputs_under and layer_inputs_over and 
@@ -309,32 +261,66 @@ class LayerModule(torch.nn.Module):
         self.layer_size = layer_size
         ### get the psoitive and negative weights from the layer_weights
         self._layer_weights_pos = torch.nn.functional.relu(layer_weights)
+        # print('self._layer_weights_pos ', self._layer_weights_pos)
         self._layer_weights_neg = (-1) * torch.nn.functional.relu((-1) * layer_weights)
+        # print('self._layer_weights_neg ', self._layer_weights_neg)
         self.layer_biases = layer_biases
         self.activation = activation
-        # ### call self.nodes objects
-        # self.nodes = [NodeModule(self.n_vars, self._layer_weights_pos[i, :], self._layer_weights_neg[i, :], self.layer_biases[i], self.activation) for i in range(self.layer_size)]
-
-        # Wrap the nodes in a custom container module.
-        self.nodes = NodeModuleList([NodeModule(self.n_vars, self._layer_weights_pos[i, :], self._layer_weights_neg[i, :], self.layer_biases[i], self.activation) for i in range(self.layer_size)])
+        ### call self.nodes objects
+        self.nodes = [NodeModule(self.n_vars, self._layer_weights_pos[i, :], self._layer_weights_neg[i, :], self.layer_biases[i], self.activation) for i in range(self.layer_size)]
 
 
     def forward(self, layer_inputs_under, layer_inputs_over, layer_inputs_under_degrees, layer_inputs_over_degrees):
+        # print('layer_inputs_under ', layer_inputs_under)
+        # print('layer_inputs_over ', layer_inputs_over)
 
-        # Step 1: Create a list of inputs for each node.
-        inputs_for_nodes = [
-            [layer_inputs_under, layer_inputs_over, layer_inputs_under_degrees, layer_inputs_over_degrees]
-            for _ in self.nodes
-        ]
+        ### for each node in the layer: propagate layer_inputs_under and layer_inputs_over through the node's weights and pass them through the node 
+        ### TO DO: parallize this operation by batches of nodes
+        results_under = []
+        results_over = []
+        results_under_degrees = []
+        results_over_degrees = []
+        # print('layer_size ', self.layer_size)
+        for node in self.nodes:
+            # print('########################## node number ', i, ' ##########################')
+            node_output_under, node_output_over, node_output_under_degree, node_output_over_degree = node(layer_inputs_under, layer_inputs_over, layer_inputs_under_degrees, layer_inputs_over_degrees)
+           
+            ### get the min and max of node_output_under and node_output_over
+            input_under = node_output_under
+            input_over = node_output_over
+            input_under = torch.reshape(input_under, (input_under.size(0) // self.n_vars, self.n_vars, input_under.size(1)))
+            input_over = torch.reshape(input_over, (input_over.size(0) // self.n_vars, self.n_vars, input_over.size(1)))
+            ### get the bounds for the node's relu:  l = min(input_under) and u = max(input_over)
+            # print(input_under_clone)
+            l = ibf_minmax_cpp.ibf_minmax(input_under)[0]
+            u = ibf_minmax_cpp.ibf_minmax(input_over)[1]
+            input_under = torch.reshape(input_under, (input_under.size(0) * self.n_vars, input_under.size(2)))
+            input_over = torch.reshape(input_over, (input_over.size(0) * self.n_vars, input_over.size(2)))
+            # print('l_after, u_after ', l, u)
+            
+            
+            
+            
+            
+            
+            
+            
+            results_under.append(node_output_under)
+            results_over.append(node_output_over)
+            results_under_degrees.append(node_output_under_degree)
+            results_over_degrees.append(node_output_over_degree)
+            del node_output_under
+            del node_output_over
+            del node_output_under_degree
+            del node_output_over_degree
         
-         # Step 2: Distribute the computations across all available GPUs.
-        layer_results = nn.parallel.data_parallel(
-                    module=self.nodes,  # The module being parallelized (a ModuleList of NodeModules in this case)
-                    inputs=inputs_for_nodes,  # The inputs to the module, appropriately batched
-                    device_ids=None  # None implies all available GPUs
-                )
+        del layer_inputs_over
+        del layer_inputs_over_degrees
+        del layer_inputs_under
+        del layer_inputs_under_degrees
         ### return the results in results_under and results_over and their degrees
-        return layer_results
+        return results_under, results_over, torch.stack(results_under_degrees), torch.stack(results_over_degrees)
+
 
 
 
@@ -370,11 +356,13 @@ class NetworkModule(torch.nn.Module):
         i = 0
         for layer in self.layers:
             print('################################################# layer number ', i, ' #################################################')
-            # print('inputs_under ', inputs_under)
-            # print('inputs_over ', inputs_over)
+            # print('inputs_under_before ', inputs_under)
+            # print('inputs_over_before ', inputs_over)
             # print('inputs_under_degrees ', inputs_under_degrees)
             # print('inputs_over_degrees ', inputs_over_degrees)
             inputs_under, inputs_over, inputs_under_degrees, inputs_over_degrees = layer(inputs_under, inputs_over, inputs_under_degrees, inputs_over_degrees)
+            # print('inputs_under_after ', inputs_under)
+            # print('inputs_over_after ', inputs_over)
             i += 1
         return inputs_under, inputs_over
 
@@ -421,18 +409,18 @@ if __name__ == "__main__":
 
     ### 4) tes LayerModule() class
 
-    n_vars = 4
-    intervals = torch.tensor([[1., 2.], [3., 4.], [7., 9.], [5., 6.]])
-    inputs = generate_inputs(n_vars, intervals, device = 'cuda')
-    layer_size = 5
-    layer_weights = torch.randn(layer_size, n_vars)
-    layer_biases = torch.randn(layer_size, 1)
-    print('inputs ', inputs)
-    input_under = input_over = inputs
-    input_under_degrees = input_over_degrees = torch.ones(n_vars, n_vars)
-    layer = LayerModule(n_vars, layer_weights, layer_biases, layer_size, 'relu')
-    layer_res = layer(input_under, input_over, input_under_degrees, input_over_degrees)
-    print(layer_res)
+    # n_vars = 4
+    # intervals = torch.tensor([[1., 2.], [3., 4.], [7., 9.], [5., 6.]])
+    # inputs = generate_inputs(n_vars, intervals, device = 'cuda')
+    # layer_size = 5
+    # layer_weights = torch.randn(layer_size, n_vars)
+    # layer_biases = torch.randn(layer_size, 1)
+    # print('inputs ', inputs)
+    # input_under = input_over = inputs
+    # input_under_degrees = input_over_degrees = torch.ones(n_vars, n_vars)
+    # layer = LayerModule(n_vars, layer_weights, layer_biases, layer_size, 'relu')
+    # layer_res = layer(input_under, input_over, input_under_degrees, input_over_degrees)
+    # print(layer_res)
     
 
     # ## 5) test NetworkModule() class
@@ -462,6 +450,13 @@ if __name__ == "__main__":
     # time_end = time.time()
     # print('time ', time_end - time_start)
     # # print('res_under', res_under)
+
+
+
+
+
+
+
 
 
 

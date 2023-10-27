@@ -9,8 +9,6 @@ Created on Thu Mar 10 18:10:44 2022
 
 import numpy as np
 import os
-from scipy.io import savemat
-import matplotlib.pyplot as plt
 from scipy.optimize import linprog
 from relu_coeffs_pytorch import relu_monom_coeffs
 
@@ -109,7 +107,10 @@ class Network:
         # TODO: vectorize?
         Y = X
         for i in range(self._num_hidden_layers + 1):
-            Y = np.maximum(0, np.matmul(self._W[i], Y) + self._b[i])
+            if i == self._num_hidden_layers:
+                Y = np.matmul(self._W[i], Y) + self._b[i]
+            else:
+                Y = np.maximum(0, np.matmul(self._W[i], Y) + self._b[i])
 
         # return np.matmul(self._W[1], Y) + self._b[1]
         return Y

@@ -56,14 +56,14 @@ def ibf_tensor_prod_input_weights(n_vars, inputs_degrees, inputs, weights):
     else:
         ### get the degree of the node_input
         degree_node_input = inputs_degrees[0, :]
-        node_input = mult_with_constant(n_vars, inputs[0], inputs[0].size(0) // n_vars, degree_node_input, weights[0])
+        node_input = mult_with_constant(n_vars, inputs[0], weights[0])
     for i in range(1, len(inputs)):
         ### multiply each ith input with the ith weight if both are not zero
         if torch.all(inputs[i] == 0) or torch.all(weights[i] == 0):
             continue
         ### multiply the ith input with the ith weight
         else:
-            ith_input_weight = mult_with_constant(n_vars, inputs[i], inputs[i].size(0) // n_vars, inputs_degrees[i, :], weights[i])
+            ith_input_weight = mult_with_constant(n_vars, inputs[i], weights[i])
             ### add the ith input to the node_input
             # print('degree_node_input ', degree_node_input)
             # print('inputs_degrees[i, :] ', inputs_degrees[i, :])
@@ -110,7 +110,7 @@ class NodeModule(torch.nn.Module):
         input_over = torch.reshape(input_over, (input_over.size(0) * self.n_vars, input_over.size(2)))
         
 
-        # print('l, u ', l, u)
+        print('l, u ', l, u)
 
         
         
