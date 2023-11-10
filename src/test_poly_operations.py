@@ -1,5 +1,5 @@
 import torch
-from poly_utils import *
+from poly_utils_cuda import *
 from utils import *
 from network_modules_batches import *
 

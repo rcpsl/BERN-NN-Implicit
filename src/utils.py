@@ -34,6 +34,39 @@ def repeat_terms(TA, tA, n):
     return result_tensor
 
 
+
+
+def repeat_terms_device(TA, tA, n, device):
+    # Ensure TA is on the correct device
+    TA = TA.to(device)
+
+    # Create a tensor that represents the repeat pattern.
+    repeat_counts = torch.arange(start=tA, end=0, step=-1, device=device)  # [tA, tA-1, ..., 1]
+
+    # Create a tensor of indices that represent the positions.
+    indices = torch.arange(start=0, end=tA, device=device)  # [0, 1, ..., tA-1]
+
+    # Repeat each index (tA - index) times. This creates a pattern of indices.
+    index_tensor = torch.repeat_interleave(indices, repeat_counts)
+
+    # Adjust the indices to account for 'n' rows in each chunk.
+    # Each index needs to be converted to 'n' row indices, resulting in a flat array of row indices.
+    expanded_index_tensor = index_tensor * n
+    row_indices = expanded_index_tensor.view(-1, 1).repeat(1, n) + torch.arange(n, device=device)
+
+    # Flatten the row_indices for gathering operation.
+    flat_row_indices = row_indices.view(-1)
+
+    # Gather the rows from the original tensor.
+    result_tensor = torch.index_select(TA, 0, flat_row_indices)
+
+    return result_tensor
+
+
+
+
+
+
 ###################################################
 ### delete whole zero rows from a 2D tensor
 ### T: 2D tensor
@@ -186,3 +219,41 @@ TA_mod2 = torch.cat(TA_mod2, dim=0)
 #                 )
 #         ### return the results in results_under and results_over and their degrees
 #         return layer_results
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

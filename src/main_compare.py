@@ -3,9 +3,11 @@ import time
 
 
 ### import BERN-IBF-NN files
-from network_modules_batches import *
+from network_modules_over_GPUs import *
+# from network_modules_batches import *
 from relu_coeffs import *
-from poly_utils import *
+# from poly_utils_old import *
+from poly_utils_cuda import *
 from test_poly_operations import *
 
 ### import BERN-NN-Valen files
@@ -31,7 +33,7 @@ torch.set_default_tensor_type('torch.cuda.FloatTensor')
 np.random.seed(0)
 
 ### 1. Define the network parameters
-n_vars = 7
+n_vars = 10
 intervals = [[-1, 1] for i in range(n_vars)]
 network_size = [n_vars, 50, 50,  1]
 
@@ -130,5 +132,6 @@ time_end = time.time()
 print('time BERN-NN', time_end - time_start )
 # print(result_under_orig)
 print('BERN-NN Bounds', torch.min(result_under_orig), torch.max(result_over_orig))
+
 
 

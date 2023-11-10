@@ -1,6 +1,10 @@
 import torch
 from utils import * 
 
+import sys
+sys.path.append('/home/wael/bernstein_gpu_codes/BERN-NN-Implicit_rep/src/row_wise_conv_cuda')
+import row_wise_convolution_wrapper
+
 
 ###################################################
 ### given a tensor of degrees L = tensor([L1,...,Ln]),
@@ -92,6 +96,7 @@ def mult_with_constant(n, pA, c):
     Returns:
         torch.Tensor: The resulting tensor after the operation.
     """
+    device = pA.device
     # Ensure the input is a 2D tensor
     assert pA.dim() == 2, "Input needs to be a 2D tensor"
 
@@ -102,7 +107,13 @@ def mult_with_constant(n, pA, c):
 
     # Create a vector with 'c' at positions where rows need to be multiplied, and '1' elsewhere
     # 'floor_divide' calculates the integer division; positions to be multiplied are those where (index // n) is even
-    multiplier = torch.where(torch.arange(num_rows) % n == 0, c * torch.ones(num_rows), torch.ones(num_rows))
+    # print('device', device)
+    # print('c.device', c.device)
+    
+    num_row_ones = torch.ones(num_rows).to(device)
+    vect = torch.arange(num_rows).to(device)
+    # print('num_row_ones.device', num_row_ones.device)
+    multiplier = torch.where(vect % n == 0, c * num_row_ones, num_row_ones)
 
     # Ensure it's the correct shape for broadcasting
     multiplier = multiplier.view(-1, 1)
@@ -120,7 +131,9 @@ def mult_with_constant(n, pA, c):
 
 
 def degree_elevation(pA, n, tA, degree, new_degree):
-
+    # print('pA', pA)
+    # print('degree', degree)
+    # print('new_degree', new_degree)
     l_diff = new_degree - degree
     I_non_zero = torch.nonzero(l_diff).reshape(-1)
     degree_non_zero = degree[I_non_zero]
@@ -157,9 +170,9 @@ def degree_elevation(pA, n, tA, degree, new_degree):
     # print('new_degree', new_degree)
 
     ### compute the convolution of res and C_diff 
-    result = [torch.nn.functional.conv1d(res[i, :].reshape(1, -1).reshape(1, 1, -1),      torch.flip(C_diff[i, :].reshape(1, -1), dims=(1,)).reshape(1, 1, -1), padding = torch.max(l_diff).int().item()   ).flatten()             for i in range(res.size(0) )]
+    result = row_wise_convolution_wrapper.row_convolution(res, C_diff)
     # print(result)
-    result = torch.stack(result)
+
 
     # print('result', result)
     # print('C_new_degree', C_new_degree)
@@ -213,35 +226,115 @@ def degree_elevation(pA, n, tA, degree, new_degree):
 
 def sum_2_polys_same_degree(n, T1, T2):
 
-    # Step 1: Chunk the tensors
-    chunks_T1 = torch.chunk(T1, T1.size(0) // n, dim=0)
-    chunks_T2 = torch.chunk(T2, T2.size(0) // n, dim=0)
+    # Step 1: Chunking
+    T1_chunks = torch.chunk(T1, T1.size(0) // n)
+    T2_chunks = torch.chunk(T2, T2.size(0) // n)
 
-    # Step 2: Create masks of chunks that are equal except for the first row
-    # We create a mask that ignores the first row during comparison
-    mask = torch.ones((1, T1.size(1)))
+    # Step 2: Checking Sub-tensors for all cross-product pairs
+    mask = torch.ones_like(T1_chunks[0])
+    mask[0, :] = 0
+    
+    equal_except_first_row = [
+        (chunk1 * mask == chunk2 * mask).all()
+        for chunk1 in T1_chunks
+        for chunk2 in T2_chunks
+    ]
+
+    # Process chunks based on the equality checks
+    resultant_chunks = []
+    for chunk1 in T1_chunks:
+        i = 0
+        for chunk2 in T2_chunks:
+            equal = (chunk1 * mask == chunk2 * mask).all()
+            print('chunk1 * mask', chunk1 * mask)
+            print('chunk2 * mask', chunk2 * mask)
+            print('equal', equal)
+            if equal:
+                # print('chunk1', chunk1)
+                # print('chunk2', chunk2)
+                summed_chunk = chunk1.clone()
+                summed_chunk[0, :] += chunk2[0, :]
+                # print('summed_chunk', summed_chunk)
+                resultant_chunks.append(summed_chunk)
+            else:
+                # print('chunk1', chunk1)
+                # print('chunk2', chunk2)
+                resultant_chunks.append(chunk2)
+                i += 1
+
+        if i == (len(T2_chunks) - 1):
+            resultant_chunks.append(chunk1)
+
+
+    # Step 3: Return the resultant big tensor by concatenating the resultant chunk tensors
+    result_tensor = torch.cat(resultant_chunks, dim=0)
+
+    return result_tensor
+
+
+# def process_tensor(T, n):
+#     # Step 1: Chunking
+#     chunks = torch.chunk(T, T.size(0) // n, dim=0)
+#     # print('chunks', chunks)
+#     # Step 2: Check equality everywhere except the first row
+#     mask = mask = torch.ones_like(chunks[0])
+#     mask[0, :] = 0
+    
+#     # Create an equality tensor
+#     # This tensor will have a shape of (N/n, N/n) where entry (i, j) is True if chunk i and chunk j are equal (ignoring first row)
+#     equality_tensor = torch.stack([((chunk * mask) == (other_chunk * mask)).all() for chunk in chunks for other_chunk in chunks]).view(len(chunks), len(chunks))
+
+#     # Create a mask for the chunks that need the first row summed
+#     sum_mask = equality_tensor.triu(diagonal=1)  # We use triu to avoid double-counting and self-counting
+
+
+#     # Apply the summations for chunks that need it
+
+#     rows_1_to_sum = sum_mask.nonzero(as_tuple=True)[0]  # Get the chunk indices that need to be summed
+#     rows_2_to_sum = sum_mask.nonzero(as_tuple=True)[1]  # Get the chunk indices that need to be summed
+
+#     result_tensor = []
+#     for index1, index2 in zip(rows_1_to_sum, rows_2_to_sum):
+#         res = chunks[index1] * mask + chunks[index2] * mask
+#         result_tensor.append(res)
+
+
+        
+    
+#     # Step 3: Concatenate the chunks to get the resultant tensor
+#     result = torch.cat(chunks, dim=0)
+#     return result
+
+
+def process_tensor(T, n):
+    # Step 1: Chunking
+    chunks = torch.chunk(T, T.size(0) // n, dim=0)
+    
+    # Step 2: Check equality everywhere except the first row
+    mask = torch.ones_like(chunks[0])
     mask[0, :] = 0
 
-    # Expand the mask to match the chunk dimensions
-    expanded_mask = mask.expand(chunks_T1[0].size(0), T1.size(1))
+    # Use broadcasting to compare chunks while ignoring the first row
+    chunks_broad = torch.stack(chunks)
+    equality = (chunks_broad.unsqueeze(1) * mask == chunks_broad.unsqueeze(0) * mask).all(dim=-1).all(dim=-1)
+    
+    # Identify chunks that need the first row summed
+    rows_1_to_sum, rows_2_to_sum = equality.triu(diagonal=1).nonzero(as_tuple=True)
 
-    # Compare all elements except the first row in each chunk pair from T1 and T2
-    comparisons = [torch.eq(chunk1[1:] * expanded_mask[1:], chunk2[1:] * expanded_mask[1:]) for chunk1, chunk2 in zip(chunks_T1, chunks_T2)]
-    full_equality = [torch.all(comp) for comp in comparisons]
+    # Create an array to track which chunks to keep
+    to_keep = torch.ones(len(chunks), dtype=torch.bool)
 
-    # Update the first row of T2's chunks where the condition is met
-    first_rows_T1 = [chunk[0] for chunk in chunks_T1]
-    first_rows_T2 = [chunk[0] for chunk in chunks_T2]
-
-    updated_first_rows_T2 = [torch.where(equal, t1_row + t2_row, t2_row) for equal, t1_row, t2_row in zip(full_equality, first_rows_T1, first_rows_T2)]
-
-    # Replace the first row of T2's chunks with the updated values
-    updated_chunks_T2 = [torch.cat([updated_row.unsqueeze(0), chunk[1:]], dim=0) for updated_row, chunk in zip(updated_first_rows_T2, chunks_T2)]
-
-    # Step 3: Concatenate the updated chunks
-    result = torch.cat(updated_chunks_T2, dim=0)
-
+    # Apply the summations for chunks that need it
+    for i1, i2 in zip(rows_1_to_sum, rows_2_to_sum):
+        chunks_broad[i1, 0, :] += chunks_broad[i2, 0, :]
+        to_keep[i2] = False  # Mark the second tensor as not to keep
+    
+    # Step 3: Concatenate the chunks to get the resultant tensor
+    chunks_to_concat = [chunk for i, chunk in enumerate(chunks_broad) if to_keep[i]]
+    result = torch.cat(chunks_to_concat, dim=0)
     return result
+
+
 
 
 
@@ -270,9 +363,9 @@ def sum_2_polys(n, pA, tA, degree_A, pB, tB, degree_B):
     ### concatenate pA and pB 
     if torch.all(degree_A == degree_B):
         # print('tA', tA)
-        # print('tB', tB)
-        # print('pA[0:6, :]', pA[0:6, :])
-        # print('pB[0:6, :]', pB[0:6, :])
+        # # print('tB', tB)
+        # print('pA[0:10, :]', pA[0:10, :])
+        # print('pB[0:10, :]', pB[0:10, :])
         # print('pA.size()', pA.size())
         # print('pB.size()', pB.size())
         # print('pA', pA)
@@ -282,17 +375,29 @@ def sum_2_polys(n, pA, tA, degree_A, pB, tB, degree_B):
         return torch.cat((pA, pB), 0)
         # return sum_2_polys_same_degree(n, pA, tA, pB, tB)
         # return sum_2_polys_same_degree(n, pA, pB)
+        T = torch.cat((pA, pB), dim=0)
+        return process_tensor(T, n)
+    
 
 
     ### degree elevate pA concatenate it with pB
     elif torch.all(torch.ge(degree_B, degree_A) ):
         pA_elevated = degree_elevation(pA, n, tA, degree_A, degree_B)
         return torch.cat((pA_elevated, pB), 0)
+        T = torch.cat((pA_elevated, pB), dim=0)
+        return process_tensor(T, n)
 
     ### degree elevate pB concatenate it with pA
     elif torch.all(torch.ge(degree_A, degree_B) ):
         pB_elevated = degree_elevation(pB, n, tB, degree_B, degree_A)
         return torch.cat((pA, pB_elevated), 0)
+        # print('degree_A', degree_A)
+        # print('degree_B', degree_B)
+        # print('pA', pA)
+        # print('pB', pB)
+        # print('pB_elevated', pB_elevated)
+        T = torch.cat((pA, pB_elevated), dim=0)
+        return process_tensor(T, n)
 
 
     ### degree elevate pA and pB concatenate it with pB
@@ -302,10 +407,13 @@ def sum_2_polys(n, pA, tA, degree_A, pB, tB, degree_B):
         # print('n', n)
         # print('tA', tA)
         # print('degree_A', degree_A)
+        # print('degree_B', degree_B)
         # print('degree_max', degree_max)
         pA_elevated = degree_elevation(pA, n, tA, degree_A, degree_max)
         pB_elevated = degree_elevation(pB, n, tB, degree_B, degree_max)
         return torch.cat((pA_elevated, pB_elevated), 0)
+        T = torch.cat((pA_elevated, pB_elevated), dim=0)
+        return process_tensor(T, n)
 
 
 ###################################################
@@ -415,17 +523,10 @@ def poly_pow_2(n_vars, TA, tA, degree_A):
 
     # # Assuming T_C_A and T_C_B are both 2D tensors of shape (n, m)
     n_rows, m = T_C_A.shape
-    # Reshape T_C_A and T_C_B to have an additional channel dimension
-    T_C_A = T_C_A.view((1, n_rows, m))  # Shape: (1, n_rows, m)
-    T_C_B = T_C_B.view((n_rows, 1, m))  # Shape: (n_rows, 1, m)
-    # Flip T_C_B
-    T_C_B_flipped = torch.flip(T_C_B, dims=(2,))  # Shape: (1, n_rows, m)
-    del T_C_B
-
     # Perform convolution
-    res = torch.nn.functional.conv1d(T_C_A, T_C_B_flipped, padding  = m - 1, groups = n_rows).flatten(1)  # Shape: (n_rows, m)
+    res = row_wise_convolution_wrapper.row_convolution(T_C_A, T_C_B)
     del T_C_A
-    del T_C_B_flipped
+    del T_C_B
     res = res.reshape(-1, 2 * m - 1)
     # print(res)
         
@@ -457,6 +558,8 @@ def quad_of_poly(n, pA, tA, degree_A, coeffs):
     # res = mult_2_polys(n, pA, tA, degree_A,  pA, tA, degree_A)
 
     if torch.abs(coeffs[0]) != 0.0:
+        # print('coeffs[0]', coeffs[0])
+        # print('coeffs[1]', coeffs[1])
         ### compute pA ** 2
         res = poly_pow_2(n, pA, tA, degree_A)
         ### compute a * pA ** 2 
@@ -469,6 +572,7 @@ def quad_of_poly(n, pA, tA, degree_A, coeffs):
         term = sum_2_polys(n, term1, t_term1, degree_term1, term2, tA, degree_A)
     else:
         ### compute b * pA 
+        # print('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', coeffs[1])
         # print('coeffs[1]', coeffs[1])
         # print('pApApApApApApApApApApApApApApApApApApApApApApApApApApApA', pA)
         term = mult_with_constant(n, pA, coeffs[1])
