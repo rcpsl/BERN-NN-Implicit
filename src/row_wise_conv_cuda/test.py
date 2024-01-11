@@ -12,10 +12,10 @@ device = torch.device('cuda')
 # Create some example data for T1 and T2
 # Ensure the data type is float32, and they are on the GPU (device)
 
-T1 = torch.tensor([[1, 2, 3, 4], [5, 6, 7, 8]], device=device, dtype=torch.float32)
-T2 = torch.tensor([[1, 2, 7], [0, 1, 6]], device=device, dtype=torch.float32)
-# T1 = torch.randn((100000000, 60), device=device, dtype=torch.float32)
-# T2 = torch.randn((100000000, 60), device=device, dtype=torch.float32)
+# T1 = torch.tensor([[1, 2, 3, 4], [5, 6, 7, 8]], device=device, dtype=torch.float32)
+# T2 = torch.tensor([[1, 2, 7], [0, 1, 6]], device=device, dtype=torch.float32)
+T1 = torch.randn((1000000, 60), device=device, dtype=torch.float32)
+T2 = torch.randn((1000000, 60), device=device, dtype=torch.float32)
 
 start_time = time.time()
 # Call the convolution function from your compiled extension

@@ -33,11 +33,13 @@ torch::Tensor row_convolution_cuda(torch::Tensor T1, torch::Tensor T2) {
     auto result = torch::zeros({T1_rows, result_cols}, T1.options());
 
     // Calculate grid and block sizes
-    const dim3 threads(16, 16);
-    const dim3 blocks((result_cols + threads.x - 1) / threads.x, (T1_rows + threads.y - 1) / threads.y);
+    // const dim3 threads(32, 32);
+    dim3 block(32, 32);
+    // const dim3 blocks((result_cols + threads.x - 1) / threads.x, (T1_rows + threads.y - 1) / threads.y);
+    dim3 grid((result_cols + block.x - 1) / block.x, (T1_rows + block.y - 1) / block.y);
 
     // Launch kernel
-    row_convolution_kernel<<<blocks, threads>>>(
+    row_convolution_kernel<<<grid, block>>>(
         T1.data_ptr<float>(), T2.data_ptr<float>(), result.data_ptr<float>(), 
         T1_rows, T1_cols, T2_cols
     );

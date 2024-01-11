@@ -414,7 +414,8 @@ if __name__ == "__main__":
         res_under, res_over = network(inputs)
     time_end = time.time()
     print('time ', time_end - time_start)
-    # print('res_under', res_under)
+    print('res_under', res_under)
+    print('res_over', res_over)
 
 
 
