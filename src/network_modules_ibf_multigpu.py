@@ -398,10 +398,16 @@ class NetworkModule(torch.nn.Module):
             i += 1
         return inputs_under, inputs_over
 
+def init_process(rank, size, fn, backend='nccl'):
+    """ Initialize the distributed environment. """
+    os.environ['MASTER_ADDR'] = '127.0.0.1'
+    os.environ['MASTER_PORT'] = '29500'
+    dist.init_process_group(backend, rank=rank, world_size=size)
+    torch.cuda.set_device(f'cuda:{rank}')
+    fn(rank, size)
+
 def run(rank, size):
     assert rank < size
-    assert dist_is_used()
-    print(f'{rank} / {world_size()}')
 
     torch.set_default_tensor_type('torch.cuda.FloatTensor')
 
@@ -409,8 +415,7 @@ def run(rank, size):
     # the same model
     torch.manual_seed(0)
     
-    # the device ID uses the LOCAL rank
-    device = f'cuda:{local_rank()}'
+    device = f'cuda:{rank}'
 
     print(f'{rank}: {device}')
 
@@ -441,38 +446,15 @@ def run(rank, size):
         print(res_under)
         print(res_over)
 
-def initialize(backend):
-    dist.init_process_group(backend=backend)
-
-def dist_is_used():
-    return (dist.is_available() and dist.is_initialized())
-
-def local_rank():
-    if not dist.is_initialized():
-        return 0
-    return int(os.environ['LOCAL_RANK'])
-
-def rank():
-    if not dist.is_initialized():
-        return 0
-    return dist.get_rank()
-
-def world_size():
-    if not dist.is_initialized():
-        return 1
-    return dist.get_world_size()
-
-def leader_rank():
-    return 0
-
-def is_leader_process():
-    return rank() == leader_rank()
 
 if __name__ == "__main__":
-    initialize('nccl')
-    torch.cuda.set_device(f'cuda:{local_rank()}')
+    size = 2
+    processes = []
     mp.set_start_method("spawn")
-    
-    print(f'{rank()} / {world_size()}')
+    for rank in range(size):
+        p = mp.Process(target=init_process, args=(rank, size, run))
+        p.start()
+        processes.append(p)
 
-    run(rank(), world_size())
+    for p in processes:
+        p.join()

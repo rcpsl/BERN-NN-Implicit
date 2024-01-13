@@ -2,7 +2,7 @@ import torch
 from utils import * 
 
 import sys
-sys.path.append('/home/wael/bernstein_gpu_codes/BERN-NN-Implicit_rep/src/row_wise_conv_cuda')
+#sys.path.append('/home/wael/bernstein_gpu_codes/BERN-NN-Implicit_rep/src/row_wise_conv_cuda')
 import row_wise_convolution_wrapper
 
 
@@ -495,8 +495,9 @@ def poly_pow_2(n_vars, TA, tA, degree_A):
     ### create TA_mod2 = reapeted TA tA times along the first dimension
     TA_mod2 = [TA[i * n_vars:].clone() for i in  range(tA)]
     for i in range(len(TA_mod2)):
-        chunk = TA_mod2[i]
-        chunk[torch.arange(n_vars, chunk.size(0), n_vars)] *= 2
+        #chunk = TA_mod2[i]
+        #chunk[torch.arange(n_vars, chunk.size(0), n_vars)] *= 2
+        TA_mod2[i][n_vars:chunk.size(0):n_vars] *= 2 #[torch.arange(n_vars, chunk.size(0), n_vars)] *= 2
     # print('TA_mod2', TA_mod2)
     TA_mod2 = torch.cat(TA_mod2, dim=0)
     # print('TA_mod2_size', TA_mod2.size())
@@ -534,6 +535,8 @@ def poly_pow_2(n_vars, TA, tA, degree_A):
     # print(res.shape)
     # print(C_AmulA.shape)
     # res =  torch.where(C_AmulA != 0, torch.div(res, C_AmulA), torch.tensor(0.))
+    #print(res)
+    #print(C_AmulA)
     res /= C_AmulA
     ### check where is Nan and replace it with 0
     torch.nan_to_num(res, nan=0.0, out=res)

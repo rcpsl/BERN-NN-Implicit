@@ -306,7 +306,7 @@ if __name__ == "__main__":
     intervals = [[-1, 1] for i in range(n_vars)]
     intervals = torch.tensor(intervals, dtype = torch.float32)
     inputs = generate_inputs(n_vars, intervals, device = 'cuda')
-    network_size = [n_vars, 8, 8]
+    network_size = [n_vars, 8, 8, 1]
     network_weights = []
     network_biases = []
 
