@@ -2,8 +2,7 @@ import torch
 from utils import * 
 
 import sys
-#sys.path.append('/home/wael/bernstein_gpu_codes/BERN-NN-Implicit_rep/src/row_wise_conv_cuda')
-import row_wise_convolution_wrapper
+import row_wise_conv_cpp
 
 
 ###################################################
@@ -22,12 +21,6 @@ def generate_binom_coeffs(L):
     B = torch.lgamma(N - R + 1)
     C = torch.lgamma(R + 1)
     return torch.exp(A - B - C)
-
-
-
-
-
-
 
 
 def split_and_select(pA, tA, I):
@@ -170,7 +163,7 @@ def degree_elevation(pA, n, tA, degree, new_degree):
     # print('new_degree', new_degree)
 
     ### compute the convolution of res and C_diff 
-    result = row_wise_convolution_wrapper.row_convolution(res, C_diff)
+    result = row_wise_conv_cpp.row_convolution(res, C_diff)
     # print(result)
 
 
@@ -525,7 +518,7 @@ def poly_pow_2(n_vars, TA, tA, degree_A):
     # # Assuming T_C_A and T_C_B are both 2D tensors of shape (n, m)
     n_rows, m = T_C_A.shape
     # Perform convolution
-    res = row_wise_convolution_wrapper.row_convolution(T_C_A, T_C_B)
+    res = row_wise_conv_cpp.row_convolution(T_C_A, T_C_B)
     del T_C_A
     del T_C_B
     res = res.reshape(-1, 2 * m - 1)

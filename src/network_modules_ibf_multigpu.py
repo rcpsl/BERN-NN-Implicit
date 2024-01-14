@@ -448,7 +448,7 @@ def run(rank, size):
 
 
 if __name__ == "__main__":
-    size = 2
+    size = 1
     processes = []
     mp.set_start_method("spawn")
     for rank in range(size):

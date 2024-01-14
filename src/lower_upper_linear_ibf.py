@@ -4,11 +4,8 @@ from poly_utils_cuda import mult_with_constant
 
 
 import sys
-sys.path.append('/home/wael/bernstein_gpu_codes/BERN-NN-Implicit_rep/src/ibf_dense_cuda')
 import ibf_dense_cpp
-
-sys.path.append('/home/wael/bernstein_gpu_codes/BERN-NN-Implicit_rep/src/find_indices_cuda')
-import find_indices_extension
+import find_indices_cpp
 
 
 def find_indices(degree):
@@ -58,7 +55,7 @@ def control_points_matrix(degree, intervals):
 
     if n_vars < 17:
         batch_size = 3 ** 15
-        indices = find_indices_extension.find_indices(degree, batch_size)
+        indices = find_indices_cpp.find_indices(degree, batch_size)
     else:
         indices = find_indices(degree)
 
