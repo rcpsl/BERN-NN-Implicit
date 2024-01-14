@@ -414,12 +414,12 @@ def run(rank, size):
 
     print(f'{rank}: {device}')
 
-    n_vars = 8
+    n_vars = 10
     intervals = [[-1, 1] for i in range(n_vars)]
     intervals = torch.tensor(intervals, dtype=torch.float32).to(device)
     inputs = generate_inputs(n_vars, intervals, device=device)
     lin_itr_numb = 1
-    network_size = [n_vars, 50, 50, 50, 2]
+    network_size = [n_vars, 70, 70, 70, 2]
     network_size = torch.tensor(network_size).to(device)
     network_weights = []
     network_biases = []
