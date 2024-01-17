@@ -223,12 +223,14 @@ class LayerModule(torch.nn.Module):
         self._layer_weights_neg = (-1) * torch.nn.functional.relu((-1) * layer_weights).to(device)
         self.layer_biases = layer_biases.to(device)
         self.activation = activation
-        self.device = device  # Added device attribute
+        self.device = device
         # Nodes will be initialized in the forward pass to ensure correct device allocation
-        self.nodes = [NodeModule(self.n_vars, self._layer_weights_pos[i, :], self._layer_weights_neg[i, :], self.layer_biases[i], self.activation, device) for i in range(self.layer_size)]
-
-        # Set mp start method to spawn to avoid issues on CUDA
-        #mp.set_start_method('spawn', force=True)
+        self.nodes = [NodeModule(self.n_vars,
+                                 self._layer_weights_pos[i, :],
+                                 self._layer_weights_neg[i, :],
+                                 self.layer_biases[i],
+                                 self.activation,
+                                 device) for i in range(self.layer_size)]
 
     def forward(self,
                 layer_inputs_under,
@@ -265,30 +267,10 @@ class LayerModule(torch.nn.Module):
             local_results_under_degrees.append(node_output_under_degree)
             local_results_over_degrees.append(node_output_over_degree)
 
-        # Gather all of the local results, so each GPU has the same copy of results_*
-        # Note: all_gather_object results in GPU -> CPU transfer for pickling
-        # TODO: it may makes sense to combine these into one all_gather_object call.
-        results_under = [None for _ in range(num_gpus)]
-        dist.all_gather_object(results_under, local_results_under)
-
-        results_over = [None for _ in range(num_gpus)]
-        dist.all_gather_object(results_over, local_results_over)
-
-        results_under_degrees = [None for _ in range(num_gpus)]
-        dist.all_gather_object(results_under_degrees, local_results_under_degrees)
-
-        results_over_degrees = [None for _ in range(num_gpus)]
-        dist.all_gather_object(results_over_degrees, local_results_over_degrees)
-
-        # flatten the List[List[Tensor]] to List[Tensor]
-        # for some reason, the Tensors may still be on the original device...
-        # so explicitly moving them to the current device seems necessary
-        results_under = [r.to(self.device) for rs in results_under for r in rs]
-        results_over = [r.to(self.device) for rs in results_over for r in rs]
-        results_under_degrees = [r.to(self.device) for rs in results_under_degrees for r in rs]
-        results_over_degrees = [r.to(self.device) for rs in results_over_degrees for r in rs]
-
-        return results_under, results_over, torch.stack(results_under_degrees), torch.stack(results_over_degrees)
+        return (local_results_under,
+                local_results_over, 
+                torch.stack(local_results_under_degrees),
+                torch.stack(local_results_over_degrees))
 
 ###################################################
 ### class NetworkModule() takes as inputs:
@@ -315,88 +297,83 @@ class NetworkModule(torch.nn.Module):
                        for i in range(len(network_size) - 1) ]
         self.device = device
 
+    def linearize(self, i):
+        return (self.lin_itr_numb > 0) and (i % self.lin_itr_numb == 0) and (i != len(self.network_size) - 2)
+
     ### propagate the inputs_over and inputs_under through each layer in the network
     def forward(self, inputs, rank, size):
-        inputs_under = inputs
-        inputs_over = inputs
-        inputs_under_degrees = torch.ones(self.n_vars, self.n_vars)
-        inputs_over_degrees = torch.ones(self.n_vars, self.n_vars)
+        all_inputs_under = inputs
+        all_inputs_over = inputs
+        all_inputs_under_degrees = torch.ones(self.n_vars, self.n_vars)
+        all_inputs_over_degrees = torch.ones(self.n_vars, self.n_vars)
 
-        i = 0
-        for layer in self.layers:
+        for i, layer in enumerate(self.layers):
             print('################################################# layer number ', i, ' #################################################')
-            inputs_under, inputs_over, inputs_under_degrees, inputs_over_degrees = \
-                    layer(inputs_under, inputs_over, inputs_under_degrees, inputs_over_degrees, rank, size)
 
-            # TODO: Move this to a separate module
-            if (self.lin_itr_numb > 0) and (i % self.lin_itr_numb == 0) and (i != len(self.network_size) - 2):
-                # Determine which nodes the current rank will process 
-                num_gpus = size
-                chunk_size = layer.layer_size // num_gpus
-                chunk_start = rank * chunk_size
-                chunk_end = chunk_start + chunk_size
-                if rank == size - 1:
-                    chunk_end = layer.layer_size
-                
-                gpu_batch_indices = list(range(chunk_start, chunk_end))
+            # each GPU takes all inputs and produces bounds for its local nodes
+            local_inputs_under, local_inputs_over, local_inputs_under_degrees, local_inputs_over_degrees = \
+                    layer(all_inputs_under, all_inputs_over, all_inputs_under_degrees, all_inputs_over_degrees, rank, size)
 
-                inputs_under_linear = []
-                inputs_over_linear = []
-                inputs_under_degrees_linear = []
-                inputs_over_degrees_linear = []
-                for j in gpu_batch_indices:
-                    degree_over = inputs_over_degrees[j]
+            # each GPU may linearizes its local bounds
+            if self.linearize(i):
+                local_inputs_under_linear = []
+                local_inputs_over_linear = []
+                local_inputs_under_degrees_linear = []
+                local_inputs_over_degrees_linear = []
+                for j in range(len(local_inputs_under)):
+                    degree_over = local_inputs_over_degrees[j]
                     degree_over_sum = torch.sum(degree_over)
                     if (degree_over_sum != 0) and (degree_over_sum != self.n_vars):
-                        input_over_linear_jth = upper_linear_ibf(self.n_vars, self.intervals, inputs_over[j], degree_over)
-                        inputs_over_linear.append(input_over_linear_jth)
+                        input_over_linear_jth = upper_linear_ibf(self.n_vars, self.intervals, local_inputs_over[j], degree_over)
+                        local_inputs_over_linear.append(input_over_linear_jth)
                         inputs_over_degrees_linear_jth = torch.ones(self.n_vars)
-                        inputs_over_degrees_linear.append(inputs_over_degrees_linear_jth)
+                        local_inputs_over_degrees_linear.append(inputs_over_degrees_linear_jth)
 
                     else:
-                        inputs_over_linear.append(inputs_over[j])
-                        inputs_over_degrees_linear.append(inputs_over_degrees[j])
+                        local_inputs_over_linear.append(local_inputs_over[j])
+                        local_inputs_over_degrees_linear.append(local_inputs_over_degrees[j])
 
 
-                    degree_under = inputs_under_degrees[j]
+                    degree_under = local_inputs_under_degrees[j]
                     degree_under_sum = torch.sum(degree_under)
                     if (degree_under_sum != 0) and (degree_under_sum != self.n_vars):
-                        input_under_linear_jth = lower_linear_ibf(self.n_vars, self.intervals, inputs_under[j], degree_under)
-                        inputs_under_linear.append(input_under_linear_jth)
+                        input_under_linear_jth = lower_linear_ibf(self.n_vars, self.intervals, local_inputs_under[j], degree_under)
+                        local_inputs_under_linear.append(input_under_linear_jth)
                         inputs_under_degrees_linear_jth = torch.ones(self.n_vars)
-                        inputs_under_degrees_linear.append(inputs_under_degrees_linear_jth)
+                        local_inputs_under_degrees_linear.append(inputs_under_degrees_linear_jth)
 
                     else:
-                        inputs_under_linear.append(inputs_under[j])
-                        inputs_under_degrees_linear.append(inputs_under_degrees[j])
+                        local_inputs_under_linear.append(local_inputs_under[j])
+                        local_inputs_under_degrees_linear.append(local_inputs_under_degrees[j])
 
-                # Gather all of the local results, so each GPU has the same copy of results_*
-                # Note: all_gather_object results in GPU -> CPU transfer for pickling
-                # TODO: it may makes sense to combine these into one all_gather_object call.
-                inputs_under_linear_all = [None for _ in range(num_gpus)]
-                dist.all_gather_object(inputs_under_linear_all, inputs_under_linear)
+                local_inputs_under = local_inputs_under_linear
+                local_inputs_over = local_inputs_over_linear
+                local_inputs_under_degrees = local_inputs_under_degrees_linear
+                local_inputs_over_degrees = local_inputs_over_degrees_linear
 
-                inputs_over_linear_all = [None for _ in range(num_gpus)]
-                dist.all_gather_object(inputs_over_linear_all, inputs_over_linear)
+            # GPUs gather their local results, so they all use the same input data.
+            # Note: all_gather_object results in GPU -> CPU transfer for pickling
+            # TODO: it may make sense to combine these into one all_gather_object call.
+            all_inputs_under = [None for _ in range(size)]
+            dist.all_gather_object(all_inputs_under, local_inputs_under)
 
-                inputs_under_degrees_linear_all = [None for _ in range(num_gpus)]
-                dist.all_gather_object(inputs_under_degrees_linear_all, inputs_under_degrees_linear)
+            all_inputs_over = [None for _ in range(size)]
+            dist.all_gather_object(all_inputs_over, local_inputs_over)
 
-                inputs_over_degrees_linear_all = [None for _ in range(num_gpus)]
-                dist.all_gather_object(inputs_over_degrees_linear_all, inputs_over_degrees_linear)
+            all_inputs_under_degrees = [None for _ in range(size)]
+            dist.all_gather_object(all_inputs_under_degrees, local_inputs_under_degrees)
 
-                inputs_under_linear = [r.to(self.device) for rs in inputs_under_linear_all for r in rs]
-                inputs_over_linear = [r.to(self.device) for rs in inputs_over_linear_all for r in rs]
-                inputs_under_degrees_linear = torch.stack([r.to(self.device) for rs in inputs_under_degrees_linear_all for r in rs])
-                inputs_over_degrees_linear = torch.stack([r.to(self.device) for rs in inputs_over_degrees_linear_all for r in rs])
+            all_inputs_over_degrees = [None for _ in range(size)]
+            dist.all_gather_object(all_inputs_over_degrees, local_inputs_over_degrees)
 
-                inputs_under = inputs_under_linear
-                inputs_over = inputs_over_linear
-                inputs_under_degrees = inputs_under_degrees_linear
-                inputs_over_degrees = inputs_over_degrees_linear
-
-            i += 1
-        return inputs_under, inputs_over
+            # flatten the List[List[Tensor]] to List[Tensor]
+            # for some reason, the Tensors may still be on the original device...
+            # so explicitly moving them to the current device seems necessary
+            all_inputs_under = [r.to(self.device) for rs in all_inputs_under for r in rs]
+            all_inputs_over = [r.to(self.device) for rs in all_inputs_over for r in rs]
+            all_inputs_under_degrees = torch.stack([r.to(self.device) for rs in all_inputs_under_degrees for r in rs])
+            all_inputs_over_degrees = torch.stack([r.to(self.device) for rs in all_inputs_over_degrees for r in rs])
+        return all_inputs_under, all_inputs_over
 
 def run(rank, size):
     assert rank < size
@@ -414,12 +391,12 @@ def run(rank, size):
 
     print(f'{rank}: {device}')
 
-    n_vars = 10
+    n_vars = 8
     intervals = [[-1, 1] for i in range(n_vars)]
     intervals = torch.tensor(intervals, dtype=torch.float32).to(device)
     inputs = generate_inputs(n_vars, intervals, device=device)
     lin_itr_numb = 1
-    network_size = [n_vars, 70, 70, 70, 2]
+    network_size = [n_vars, 50, 50, 50, 2]
     network_size = torch.tensor(network_size).to(device)
     network_weights = []
     network_biases = []
