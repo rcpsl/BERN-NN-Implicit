@@ -13,7 +13,7 @@ import os
 import sys
 import ibf_minmax_cpp
 
-
+import pdb
 
 ###################################################
 ### create a 2D inputs of the input layer for the network
@@ -66,21 +66,22 @@ def ibf_tensor_prod_input_weights(n_vars, inputs_degrees, inputs, weights, devic
         # Get the degree of the node_input
         degree_node_input = inputs_degrees[0, :]   
         node_input = mult_with_constant(n_vars, inputs[0], weights[0])
-    
     for i in range(1, len(inputs)):
+        if torch.all(torch.abs(inputs[i]) == 0) or  torch.all(torch.abs(weights[i]) == 0):
+            continue
         if torch.all(torch.abs(weights[i]) != 0):
             ith_input_weight = mult_with_constant(n_vars, inputs[i], weights[i])
-            node_input = sum_2_polys(n_vars, node_input, node_input.size(0) // n_vars, degree_node_input, ith_input_weight, ith_input_weight.size(0) // n_vars, inputs_degrees[i, :])
+            node_input = sum_2_polys(n_vars,
+                                     node_input,
+                                     node_input.size(0) // n_vars,
+                                     degree_node_input,
+                                     ith_input_weight,
+                                     ith_input_weight.size(0) // n_vars,
+                                     inputs_degrees[i, :])
             # Update the degree of the node_input by taking the max wise between the degree of the node_input and the degree of the ith_input_weight
             degree_node_input = torch.max(degree_node_input, inputs_degrees[i, :])
 
     return node_input, degree_node_input
-
-
-
-
-
-
 
 ###################################################
 ### class NodeModule() takes as inputs:
@@ -147,7 +148,6 @@ class NodeModule(torch.nn.Module):
             return input_under, input_over, input_under_degree, input_over_degree
 
         if self.activation == 'relu':
-            
             input_under = torch.reshape(input_under, (input_under.size(0) // self.n_vars, self.n_vars, input_under.size(1)))
             input_over = torch.reshape(input_over, (input_over.size(0) // self.n_vars, self.n_vars, input_over.size(1)))
             ### get the bounds for the node's relu:  l = min(input_under) and u = max(input_over)
@@ -155,6 +155,8 @@ class NodeModule(torch.nn.Module):
             u = ibf_minmax_cpp.ibf_minmax(input_over)[1]
             input_under = torch.reshape(input_under, (input_under.size(0) * self.n_vars, input_under.size(2)))
             input_over = torch.reshape(input_over, (input_over.size(0) * self.n_vars, input_over.size(2)))
+
+            torch.cuda.empty_cache()
                         
             ### if u <= 0: return relu_node_under = relu_node_over = torch.tensor([0.]), and their degrees = torch.zeros(self.n_vars)
             if u <= 0.0:
@@ -214,17 +216,16 @@ class NodeModule(torch.nn.Module):
 ### layer_size: the number of nodes for the layer
 ###################################################
 class LayerModule(torch.nn.Module):
-
-    def __init__(self, n_vars, layer_weights, layer_biases, layer_size, activation, device):
+    def __init__(self, n_vars, intervals, layer_weights, layer_biases, layer_size, activation, device):
         super().__init__()
         self.n_vars = n_vars
+        self.intervals = intervals
         self.layer_size = layer_size
         self._layer_weights_pos = torch.nn.functional.relu(layer_weights).to(device)
         self._layer_weights_neg = (-1) * torch.nn.functional.relu((-1) * layer_weights).to(device)
         self.layer_biases = layer_biases.to(device)
         self.activation = activation
         self.device = device
-        # Nodes will be initialized in the forward pass to ensure correct device allocation
         self.nodes = [NodeModule(self.n_vars,
                                  self._layer_weights_pos[i, :],
                                  self._layer_weights_neg[i, :],
@@ -237,20 +238,18 @@ class LayerModule(torch.nn.Module):
                 layer_inputs_over,
                 layer_inputs_under_degrees,
                 layer_inputs_over_degrees,
+                should_linearize,
                 rank,
                 size):
-        num_gpus = size
-
         # Determine which nodes the current rank will process 
-        chunk_size = self.layer_size // num_gpus
+        chunk_size = self.layer_size // size
         chunk_start = rank * chunk_size
         chunk_end = chunk_start + chunk_size
         if rank == size - 1:
             chunk_end = self.layer_size
-        
         gpu_batch_indices = list(range(chunk_start, chunk_end))
-        print(f'{rank}: {gpu_batch_indices}')
-
+        print(gpu_batch_indices)
+        
         # these results are local to the current device
         local_results_under = []
         local_results_over = []
@@ -262,6 +261,10 @@ class LayerModule(torch.nn.Module):
             (node_output_under, node_output_over, node_output_under_degree, node_output_over_degree) = node(
                 layer_inputs_under, layer_inputs_over, layer_inputs_under_degrees, layer_inputs_over_degrees)
 
+            if should_linearize:
+                (node_output_under, node_output_over, node_output_under_degree, node_output_over_degree) = \
+                        self.linearize(node_output_under, node_output_over, node_output_under_degree, node_output_over_degree) 
+
             local_results_under.append(node_output_under)
             local_results_over.append(node_output_over)
             local_results_under_degrees.append(node_output_under_degree)
@@ -269,8 +272,34 @@ class LayerModule(torch.nn.Module):
 
         return (local_results_under,
                 local_results_over, 
-                torch.stack(local_results_under_degrees),
-                torch.stack(local_results_over_degrees))
+                local_results_under_degrees,
+                local_results_over_degrees)
+
+    def linearize(self,
+                  input_under,
+                  input_over,
+                  degree_under,
+                  degree_over):
+        degree_over_sum = torch.sum(degree_over)
+        if (degree_over_sum != 0) and (degree_over_sum != self.n_vars):
+            input_over_linear = upper_linear_ibf(self.n_vars, self.intervals, input_over, degree_over)
+            input_over_degrees_linear = torch.ones(self.n_vars)
+        else:
+            input_over_linear = input_over
+            input_over_degrees_linear = degree_over
+
+        degree_under_sum = torch.sum(degree_under)
+        if (degree_under_sum != 0) and (degree_under_sum != self.n_vars):
+            input_under_linear = lower_linear_ibf(self.n_vars, self.intervals, input_under, degree_under)
+            input_under_degrees_linear = torch.ones(self.n_vars)
+        else:
+            input_under_linear = input_under
+            input_under_degrees_linear = degree_under
+
+        return (input_under_linear,
+                input_over_linear,
+                input_under_degrees_linear,
+                input_over_degrees_linear)
 
 ###################################################
 ### class NetworkModule() takes as inputs:
@@ -293,8 +322,8 @@ class NetworkModule(torch.nn.Module):
         self.network_size = network_size
         self.lin_itr_numb = lin_itr_numb
         self.act = lambda i: 'relu' if i != len(network_size) - 2 else 'linear'
-        self.layers = [LayerModule(n_vars, network_weights[i], network_biases[i], network_size[i + 1], self.act(i), device) \
-                       for i in range(len(network_size) - 1) ]
+        self.layers = [LayerModule(n_vars, intervals, network_weights[i], network_biases[i], network_size[i + 1], self.act(i), device) \
+                       for i in range(len(network_size) - 1)]
         self.device = device
 
     def linearize(self, i):
@@ -312,44 +341,7 @@ class NetworkModule(torch.nn.Module):
 
             # each GPU takes all inputs and produces bounds for its local nodes
             local_inputs_under, local_inputs_over, local_inputs_under_degrees, local_inputs_over_degrees = \
-                    layer(all_inputs_under, all_inputs_over, all_inputs_under_degrees, all_inputs_over_degrees, rank, size)
-
-            # each GPU may linearizes its local bounds
-            if self.linearize(i):
-                local_inputs_under_linear = []
-                local_inputs_over_linear = []
-                local_inputs_under_degrees_linear = []
-                local_inputs_over_degrees_linear = []
-                for j in range(len(local_inputs_under)):
-                    degree_over = local_inputs_over_degrees[j]
-                    degree_over_sum = torch.sum(degree_over)
-                    if (degree_over_sum != 0) and (degree_over_sum != self.n_vars):
-                        input_over_linear_jth = upper_linear_ibf(self.n_vars, self.intervals, local_inputs_over[j], degree_over)
-                        local_inputs_over_linear.append(input_over_linear_jth)
-                        inputs_over_degrees_linear_jth = torch.ones(self.n_vars)
-                        local_inputs_over_degrees_linear.append(inputs_over_degrees_linear_jth)
-
-                    else:
-                        local_inputs_over_linear.append(local_inputs_over[j])
-                        local_inputs_over_degrees_linear.append(local_inputs_over_degrees[j])
-
-
-                    degree_under = local_inputs_under_degrees[j]
-                    degree_under_sum = torch.sum(degree_under)
-                    if (degree_under_sum != 0) and (degree_under_sum != self.n_vars):
-                        input_under_linear_jth = lower_linear_ibf(self.n_vars, self.intervals, local_inputs_under[j], degree_under)
-                        local_inputs_under_linear.append(input_under_linear_jth)
-                        inputs_under_degrees_linear_jth = torch.ones(self.n_vars)
-                        local_inputs_under_degrees_linear.append(inputs_under_degrees_linear_jth)
-
-                    else:
-                        local_inputs_under_linear.append(local_inputs_under[j])
-                        local_inputs_under_degrees_linear.append(local_inputs_under_degrees[j])
-
-                local_inputs_under = local_inputs_under_linear
-                local_inputs_over = local_inputs_over_linear
-                local_inputs_under_degrees = local_inputs_under_degrees_linear
-                local_inputs_over_degrees = local_inputs_over_degrees_linear
+                    layer(all_inputs_under, all_inputs_over, all_inputs_under_degrees, all_inputs_over_degrees, self.linearize(i), rank, size)
 
             # GPUs gather their local results, so they all use the same input data.
             # Note: all_gather_object results in GPU -> CPU transfer for pickling
@@ -373,6 +365,7 @@ class NetworkModule(torch.nn.Module):
             all_inputs_over = [r.to(self.device) for rs in all_inputs_over for r in rs]
             all_inputs_under_degrees = torch.stack([r.to(self.device) for rs in all_inputs_under_degrees for r in rs])
             all_inputs_over_degrees = torch.stack([r.to(self.device) for rs in all_inputs_over_degrees for r in rs])
+
         return all_inputs_under, all_inputs_over
 
 def run(rank, size):
@@ -391,12 +384,12 @@ def run(rank, size):
 
     print(f'{rank}: {device}')
 
-    n_vars = 8
+    n_vars = 2
     intervals = [[-1, 1] for i in range(n_vars)]
     intervals = torch.tensor(intervals, dtype=torch.float32).to(device)
     inputs = generate_inputs(n_vars, intervals, device=device)
     lin_itr_numb = 1
-    network_size = [n_vars, 50, 50, 50, 2]
+    network_size = [n_vars, 20, 20, 1]
     network_size = torch.tensor(network_size).to(device)
     network_weights = []
     network_biases = []
