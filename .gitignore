@@ -1,3 +1,6 @@
+# pickle files
+*.pickle
+
 # slurm output files
 *.out
 
