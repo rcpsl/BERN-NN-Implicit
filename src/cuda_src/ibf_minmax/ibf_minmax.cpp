@@ -3,6 +3,7 @@
 #include <iostream>
 
 torch::Tensor ibf_minmax_cuda(torch::Tensor poly);
+torch::Tensor quadrant_ibf_minmax_cuda(torch::Tensor poly);
 
 #define CHECK_SIZE(x) TORCH_CHECK(x.dense_dim() == 3, #x " must be have dim == 3")
 #define CHECK_CUDA(x) TORCH_CHECK(x.device().is_cuda(), #x " must be a CUDA tensor")
@@ -15,9 +16,18 @@ torch::Tensor ibf_minmax(
         return ibf_minmax_cuda(poly);
 }
 
+torch::Tensor quadrant_ibf_minmax(
+        torch::Tensor poly) {
+        CHECK_INPUT(poly);
+        return quadrant_ibf_minmax_cuda(poly);
+}
+
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("ibf_minmax",
  	&ibf_minmax,
 	"Computes the min and max values of a Bernstein polynomial in implifict form");
+  m.def("quadrant_ibf_minmax",
+	&quadrant_ibf_minmax,
+	"Computes the min and max values of a Bernsetin polynomial, assuming data falls in a quadrant");
 }
 

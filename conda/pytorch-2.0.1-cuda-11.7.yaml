@@ -12,8 +12,4 @@ dependencies:
   - numba
   - pip
   - pip:
-<<<<<<< HEAD
     - matplotlib
-=======
-    - matplotlib
->>>>>>> More changes/ improvement to degree elevation using batching

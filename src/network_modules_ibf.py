@@ -471,13 +471,13 @@ if __name__ == "__main__":
 
     ## 5) test NetworkModule() class
 
-    n_vars = 8
+    n_vars = 2
     intervals = [[-1, 1] for i in range(n_vars)]
     intervals = torch.tensor(intervals, dtype = torch.float32)
     lin_itr_numb = 1
     inputs = generate_inputs(n_vars, intervals, device = 'cuda')
     # network_size = [n_vars, 50, 50, 50, 50, 50, 50, 5]
-    network_size = [n_vars, 50, 50, 50, 2]
+    network_size = [n_vars, 20, 20, 1]
     network_weights = []
     network_biases = []
 
@@ -494,4 +494,5 @@ if __name__ == "__main__":
     time_end = time.time()
     print('time ', time_end - time_start)
 
-    print(res_under, res_over)
+    print(res_under)
+    print(res_over)

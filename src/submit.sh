@@ -2,12 +2,12 @@
 #SBATCH --job-name=dist-bern-nn
 #SBATCH -A amowli_lab_gpu
 #SBATCH -p gpu
-#SBATCH --nodes=4
-#SBATCH --ntasks=4
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --gres=gpu:V100:1
+#SBATCH --gres=gpu:A30:1
 #SBATCH --cpus-per-task=8
-#SBATCH --time=00:05:00
+#SBATCH --time=00:10:00
 
 # One node needs to be used as the "host" for the rendezvuoz
 # system used by torch. This just gets a list of the hostnames
@@ -24,7 +24,7 @@ conda activate bernstein-poly
 srun torchrun \
     --nnodes $SLURM_NNODES \
     --nproc_per_node 1 \
-    --max_restarts 2 \
+    --max_restarts 0 \
     --rdzv_backend c10d \
     --rdzv_id $SLURM_JOB_ID \
     --rdzv_endpoint $HOST_NODE_ADDR \
