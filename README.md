@@ -14,8 +14,7 @@ Bounding neural networks with Bernstein polynomials in Implicit Form
 
 
 
-Most of our experiment code is in the `rep/` directory.
-Some parts of the implementation are currently in `src/`, The cuda extensions
+Most of our experiment code is in the `rep/` directory. Some parts of the implementation and experiments are currently in `src/`, The cuda extensions
 are in `src/cuda_src`.
 
 ## Environment Setup
@@ -47,8 +46,9 @@ before running the pip install.
 
 ## Running the example
 
-We provide a self-contained example showing how to use the `NetworkModule` class in `rep/Bern_NN_IBF.py`.
-Comments in this example script explain the different settings that can be passed into the `NetworkModule`.
+After the conda environment and cuda dependencies are setup, you can run our self-contained example. 
+This illustrates simple usage of the `NetworkModule` class in `rep/Bern_NN_IBF.py`. Comments in this 
+example script explain some of the different settings that can be passed into the `NetworkModule`.
 
 ```console
 python example.py
