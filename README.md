@@ -9,8 +9,8 @@ Bounding neural networks with Bernstein polynomials in Implicit Form
     ├── src/cuda_src          # Contains PyTorch extensions written in CUDA.
     ├── conda                 # Conda environment files. Used to install dependencies.
     ├── setup.py              # Build and install cuda extensions. 
-    └── example.py	      # A self-contained example for running the `NetworkModule`  
-			      # to compute lower bounds.
+    └── example.py		# A self-contained example for running the `NetworkModule`  
+				# to compute lower bounds.
 
 
 
