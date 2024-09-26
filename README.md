@@ -3,6 +3,17 @@ Bounding neural networks with Bernstein polynomials in Implicit Form
 
 ## Directory Layout
 
+    .
+    ├── rep                   # "Reproduction," primarily for experiment scripts.  
+    ├── src                   # Source files that may be used in the experiment scripts. 
+    ├── src/cuda_src          # Contains PyTorch extensions written in CUDA.
+    ├── conda                 # Conda environment files. Used to install dependencies.
+    ├── setup.py              # Build and install cuda extensions. 
+    └── example.py	      # A self-contained example for running the `NetworkModule`  
+			      # to compute lower bounds.
+
+
+
 Most of our experiment code is in the `rep/` directory.
 Some parts of the implementation are currently in `src/`, The cuda extensions
 are in `src/cuda_src`.
