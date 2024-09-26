@@ -1,3 +1,7 @@
+# image outputs
+*.pdf
+*.png
+
 # pickle files
 *.pickle
 

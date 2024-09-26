@@ -9,7 +9,7 @@
 #include <cuda.h>
 #include <cuda_runtime.h>
 
-constexpr int BLOCK_SIZE_X = 1024;
+constexpr int BLOCK_SIZE_X = 256;
 
 template<typename scalar_t, int dim>
 using packed_accessor_t = torch::PackedTensorAccessor64<scalar_t, dim, torch::RestrictPtrTraits>;
@@ -66,7 +66,7 @@ torch::Tensor ibf_dense_cuda(torch::Tensor poly) {
   int64_t ebf_size = int_pow(max_degree, nvars);
 
   int64_t target_blocks_x = nterms;
-  int64_t blocks_x = std::min(target_blocks_x, static_cast<int64_t>(int_pow(2, 16)));
+  int64_t blocks_x = std::min(target_blocks_x, static_cast<int64_t>(int_pow(2, 31) / ebf_size));
 
   auto options = torch::TensorOptions()
 	  .dtype(poly.dtype())
@@ -87,12 +87,6 @@ torch::Tensor ibf_dense_cuda(torch::Tensor poly) {
       ebf_size);
   }));
 
-  // auto ebf_sum = block_ebf_sum.sum(/*dim=*/0);
-
-  // auto minmax = torch::empty(2, options);
-  // minmax[0] = std::get<0>(ebf_sum.min(0)).item();
-  // minmax[1] = std::get<0>(ebf_sum.max(0)).item();
-  // return minmax;
   auto ebf_sum = block_ebf_sum.sum(/*dim=*/0);
   return ebf_sum;
 }

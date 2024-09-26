@@ -497,15 +497,14 @@ if __name__ == "__main__":
     n_vars = 5
     intervals = [[-1, 1] for i in range(n_vars)]
     intervals = torch.tensor(intervals, dtype = torch.float32)
-    lin_itr_numb = 1
+    lin_itr_numb = 4
     inputs = generate_inputs(n_vars, intervals, device = 'cuda')
-    # network_size = [n_vars, 50, 50, 50, 50, 50, 50, 5]
     network_size = [n_vars, 5, 5, 5, 1]
     network_weights = []
     network_biases = []
 
     for i in range(len(network_size) - 1):
-        # weights = torch.randn(network_size[i  + 1], network_size[i])
+        #weights = torch.randn(network_size[i  + 1], network_size[i])
         weights = torch.ones(network_size[i  + 1], network_size[i])
         # biases = torch.randn(network_size[i  + 1], 1)
         biases = torch.zeros(network_size[i  + 1], 1)

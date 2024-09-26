@@ -24,10 +24,10 @@ def run(rank, size):
     # the device ID uses the LOCAL rank
     device = f'cuda:{local_rank()}'
 
-    n_trials = 5
+    n_trials = 2
     n_vars = 5
-    n_layers = 2
-    hidden_dim = 100
+    n_layers = 3
+    hidden_dim = size * 50
     output_dim = 1
     lin_itr_numb = 1
 
@@ -37,7 +37,13 @@ def run(rank, size):
     intervals = torch.tensor(intervals, dtype=torch.float32).to(device)
     # track parameters for the current world size
     results[size] = []
-    for seed in range(n_trials):
+    results['n_trials'] = n_trials
+    results['n_vars'] = n_vars
+    results['n_layers'] = n_layers
+    results['hidden_dim'] = hidden_dim
+    results['output_dim'] = output_dim
+    results['lin_itr_numb'] = lin_itr_numb 
+    for seed in range(n_trials + 1):
         # Each trial needs to use a different random seed
         # This seed is set per-process, but each process should
         # use the same seed.
@@ -53,7 +59,9 @@ def run(rank, size):
                                        rank=rank,
                                        size=size,
                                        device=device)
-        results[size].append(trial_results)
+        if seed > 0:
+            # Use the first run as a warmup, so we don't track it.
+            results[size].append(trial_results)
 
     jobid = os.environ['SLURM_JOBID']
     results_dir = pathlib.Path('./results_strong/')

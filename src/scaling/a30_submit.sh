@@ -2,12 +2,12 @@
 #SBATCH --job-name=dist-bern-nn
 #SBATCH -A amowli_lab_gpu
 #SBATCH -p gpu
-#SBATCH --nodes=4
-#SBATCH --ntasks=4
+#SBATCH --nodes=2
+#SBATCH --ntasks=2
 #SBATCH --ntasks-per-node=1
-#SBATCH --gres=gpu:A100:2
+#SBATCH --gres=gpu:A30:4
 #SBATCH --cpus-per-task=8
-#SBATCH --time=00:10:00
+#SBATCH --time=00:20:00
 
 # One node needs to be used as the "host" for the rendezvuoz
 # system used by torch. This just gets a list of the hostnames
@@ -33,10 +33,10 @@ torchrun_with_gpus () {
         --rdzv_endpoint $HOST_NODE_ADDR \
         --redirects 3 \
         --tee 3 \
-        weak_scaling.py;
+        strong_scaling.py;
 }
 
 torchrun_with_gpus 1 1 
 torchrun_with_gpus 1 2 
-torchrun_with_gpus 2 2 
-torchrun_with_gpus 4 2 
+torchrun_with_gpus 1 4 
+torchrun_with_gpus 2 4 
